@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
+__all__ = ["Task"]
 @dataclass
 class Task:
     title : str                                                 # 任务标题
