@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from app.config import DB_PATH
 
 class DatabaseManager:
     def __init__(self, db_path: str | Path | None = None):
@@ -14,7 +15,7 @@ class DatabaseManager:
         self.project_root: Path = self.base_dir.parent.parent
 
         if db_path is None:
-            self.db_path: Path = self.project_root / "data" / "ddl_center.db"
+            self.db_path: Path = DB_PATH
         else:
             self.db_path = Path(db_path)
 
