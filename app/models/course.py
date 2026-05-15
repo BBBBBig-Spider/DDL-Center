@@ -12,7 +12,7 @@ class Course:
     teacher: str = ""               # 教师
     semester: str = ""              # 学期
     external_id: str | None = None  # 教学网课程 ID
-    color: str = "Blue"            # GUI 显示颜色
+    color: str = "#4F81BD"        # GUI 显示颜色
     source: str = "manual"          # manual / sync
     raw_payload: str = ""           # 原始同步内容，调试用
 
