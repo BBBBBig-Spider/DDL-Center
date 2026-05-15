@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS courses (
     teacher TEXT DEFAULT '',
     semester TEXT DEFAULT '',
     external_id TEXT,
-    color TEXT DEFAULT 'Blue',
+    color TEXT DEFAULT '#4F81BD',
     source TEXT NOT NULL DEFAULT 'manual',
     raw_payload TEXT DEFAULT ''
 );
@@ -63,12 +63,13 @@ CREATE TABLE IF NOT EXISTS exams (
 
 CREATE TABLE IF NOT EXISTS alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id INTEGER NOT NULL,
+    task_id INTEGER,
     level TEXT NOT NULL,
     kind TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    is_read INTEGER NOT NULL DEFAULT 0
+    is_read INTEGER NOT NULL DEFAULT 0,
+    target_type TEXT NOT NULL DEFAULT 'task'
 );
 
 CREATE TABLE IF NOT EXISTS sync_records (
