@@ -49,12 +49,11 @@ CREATE TABLE IF NOT EXISTS schedule_slots (
 
 CREATE TABLE IF NOT EXISTS exams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    course_id INTEGER NOT NULL,
+    course_id INTEGER,
     name TEXT NOT NULL,
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
     location TEXT DEFAULT '',
-    seat TEXT DEFAULT '',
     exam_type TEXT NOT NULL DEFAULT 'other',
     source TEXT NOT NULL DEFAULT 'manual',
     external_id TEXT,
@@ -62,17 +61,15 @@ CREATE TABLE IF NOT EXISTS exams (
     FOREIGN KEY (course_id) REFERENCES courses(id)
 );
 
--- task_id is nullable: overload and progress alerts don't map to a single task.
--- target_type: 'task' | 'day' | 'global'
 CREATE TABLE IF NOT EXISTS alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id INTEGER,
-    target_type TEXT NOT NULL DEFAULT 'task',
     level TEXT NOT NULL,
     kind TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    is_read INTEGER NOT NULL DEFAULT 0
+    is_read INTEGER NOT NULL DEFAULT 0,
+    target_type TEXT NOT NULL DEFAULT 'task'
 );
 
 CREATE TABLE IF NOT EXISTS sync_records (
