@@ -15,7 +15,7 @@ class DatabaseManager:
         self.project_root: Path = self.base_dir.parent.parent
 
         if db_path is None:
-            self.db_path: Path = DB_PATH
+            self.db_path: Path = Path(DB_PATH)
         else:
             self.db_path = Path(db_path)
 
