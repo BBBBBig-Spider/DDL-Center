@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import time
-from task import Task
+from app.models.task import Task
 
 
 __all__ = ["ScheduleSlot"]
