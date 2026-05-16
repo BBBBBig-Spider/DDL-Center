@@ -17,17 +17,21 @@ class AppFacade:
     def __init__(self, task_manager: TaskManager):
         self.task_manager = task_manager
     def create_task(self, data: dict) -> int:
-        self.task_manager.create_task(data)
+        return self.task_manager.create_task(data)
     def update_task(self, task_id: int, data: dict) -> None:
         self.task_manager.update_task(task_id, data)
     def delete_task(self, task_id: int) -> None:
         self.task_manager.delete_task(task_id)
     def get_task(self, task_id: int) -> Task | None:
-        self.task_manager.get_task(task_id)
+        return self.task_manager.get_task(task_id)
     def list_tasks(self, filters: dict | None = None) -> list[Task]:
-        self.task_manager.list_tasks(filters)
+        return self.task_manager.list_tasks(filters)
     def mark_task_done(self, task_id: int) -> None:
         self.task_manager.mark_done(task_id)
+    def list_by_course(self, course_id: int) -> list[Task]:
+        return self.task_manager.list_by_course(course_id)
+    def list_by_status(self, status: str) -> list[Task]:
+        return self.task_manager.list_by_status(status)
 
     def list_courses(self) -> list[Course]:
         raise NotImplementedError
