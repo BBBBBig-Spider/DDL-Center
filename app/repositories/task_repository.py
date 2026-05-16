@@ -136,8 +136,10 @@ class TaskRepository:
             raw_payload=row["raw_payload"] or "",
         )
 
+    # ─── 增 ────────────────────────────────────────────────────
+
     def add(self, task: Task) -> int:
-        """Insert a task and return its generated id."""
+        """插入一条任务，返回新记录的 id。"""
         self._validate_task(task)
         conn = self.db_manager.get_connection()
 
@@ -184,9 +186,12 @@ class TaskRepository:
 
         return cursor.lastrowid
 
+    # ─── 查全部 ────────────────────────────────────────────────
+
     def list_all(self) -> List[Task]:
-        """Return all tasks ordered by due time."""
+        """返回所有任务，按截止时间升序排列。"""
         conn = self.db_manager.get_connection()
+
         cursor = conn.execute(
             """
             SELECT *
@@ -194,14 +199,19 @@ class TaskRepository:
             ORDER BY due_time ASC
             """
         )
-        return [self._row_to_task(row) for row in cursor.fetchall()]
+
+        rows = cursor.fetchall()
+        return [self._row_to_task(row) for row in rows]
+
+    # ─── 查单个 ────────────────────────────────────────────────
 
     def get_by_id(self, task_id: int) -> Optional[Task]:
-        """Return a task by id, or None when it does not exist."""
+        """根据 id 查询任务，找不到返回 None。"""
         if not self._is_int(task_id):
             raise TypeError("task_id must be int")
-
+        
         conn = self.db_manager.get_connection()
+
         cursor = conn.execute(
             """
             SELECT *
@@ -210,12 +220,23 @@ class TaskRepository:
             """,
             (task_id,),
         )
+
         row = cursor.fetchone()
-        return self._row_to_task(row) if row is not None else None
+
+        if row is None:
+            return None
+
+        return self._row_to_task(row)
+
+    # ─── 改 ────────────────────────────────────────────────────
 
     def update(self, task: Task) -> bool:
-        """Update an existing task. Return True if a row was updated."""
+        """
+        根据 task.id 更新整条记录。
+        返回 True 表示更新成功，False 表示没有找到该 id。
+        """
         self._validate_task(task, require_id=True)
+
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -260,12 +281,15 @@ class TaskRepository:
 
         return cursor.rowcount > 0
 
+    # ─── 删 ────────────────────────────────────────────────────
+
     def delete(self, task_id: int) -> bool:
-        """Delete a task by id. Return True if a row was deleted."""
+        """根据 id 删除任务。返回 True 表示删除成功。"""
         if not self._is_int(task_id):
             raise TypeError("task_id must be int")
-
+        
         conn = self.db_manager.get_connection()
+
         with conn:
             cursor = conn.execute(
                 """
@@ -277,10 +301,13 @@ class TaskRepository:
 
         return cursor.rowcount > 0
 
+    # ─── 扩展查询（可选，按需添加）─────────────────────────────
+
     def list_by_status(self, status: str) -> List[Task]:
-        """Return tasks with the given status ordered by due time."""
+        """按状态筛选任务。"""
         self._validate_status(status)
         conn = self.db_manager.get_connection()
+
         cursor = conn.execute(
             """
             SELECT *
@@ -290,12 +317,15 @@ class TaskRepository:
             """,
             (status,),
         )
-        return [self._row_to_task(row) for row in cursor.fetchall()]
+
+        rows = cursor.fetchall()
+        return [self._row_to_task(row) for row in rows]
 
     def list_by_course(self, course_id: int) -> List[Task]:
-        """Return tasks for the given course ordered by due time."""
+        """按课程筛选任务。"""
         self._validate_course_id(course_id)
         conn = self.db_manager.get_connection()
+
         cursor = conn.execute(
             """
             SELECT *
@@ -305,12 +335,15 @@ class TaskRepository:
             """,
             (course_id,),
         )
-        return [self._row_to_task(row) for row in cursor.fetchall()]
+
+        rows = cursor.fetchall()
+        return [self._row_to_task(row) for row in rows]
 
     def list_due_before(self, deadline: datetime) -> List[Task]:
-        """Return unfinished tasks due on or before the given deadline."""
+        """查询截止时间在 deadline 之前的所有未完成任务。"""
         self._validate_deadline(deadline)
         conn = self.db_manager.get_connection()
+
         cursor = conn.execute(
             """
             SELECT *
@@ -320,4 +353,6 @@ class TaskRepository:
             """,
             (deadline.isoformat(),),
         )
-        return [self._row_to_task(row) for row in cursor.fetchall()]
+
+        rows = cursor.fetchall()
+        return [self._row_to_task(row) for row in rows]
