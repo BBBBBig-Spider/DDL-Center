@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QStackedWidget, QLabel
-=======
 import sys
 
 from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QApplication
->>>>>>> aff182f (feat: complete the basic frame of task list)
 
 class MainWindow(QMainWindow): 
     def __init__(self, facade): 
@@ -24,10 +20,7 @@ class MainWindow(QMainWindow):
 
         welcome_label = QLabel("欢迎来到DDL指挥中心！请选择左侧功能。🕷️")
         self.content_area.addWidget(welcome_label)
-<<<<<<< HEAD
-=======
         
->>>>>>> aff182f (feat: complete the basic frame of task list)
     
     def setup_sidebar(self): 
         sidebar_widget = QWidget()
@@ -43,9 +36,6 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-<<<<<<< HEAD
-        self.main_layout.addWidget(sidebar_widget, stretch = 1)
-=======
         self.main_layout.addWidget(sidebar_widget, stretch = 1)
 
 if __name__ == "__main__":
@@ -55,4 +45,3 @@ if __name__ == "__main__":
     test_widget.resize(1000, 700)
     test_widget.show()
     sys.exit(app.exec())
->>>>>>> aff182f (feat: complete the basic frame of task list)
