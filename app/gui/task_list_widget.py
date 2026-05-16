@@ -1,9 +1,15 @@
 import sys
 from PySide6.QtWidgets import (QScrollArea, QVBoxLayout, QWidget, QHBoxLayout, 
+<<<<<<< HEAD
                              QPushButton, QCheckBox, QLabel, QFrame, QApplication, QDialog)
 from PySide6.QtCore import Qt
 from datetime import datetime
 from app.gui.task_editor_dialog import TaskEditorDialog
+=======
+                             QPushButton, QCheckBox, QLabel, QFrame, QApplication)
+from PySide6.QtCore import Qt
+from datetime import datetime
+>>>>>>> af3ee684ab51ba9d036ed59f9c5ddedfd797ca51
 
 class TaskCardWidget(QFrame): 
     def __init__(self, task_data) -> None:
@@ -12,7 +18,10 @@ class TaskCardWidget(QFrame):
         self.setObjectName("TaskCard")
         
         # 优先级颜色：1 高(红)，2 中(橙)，3 低(蓝)
+<<<<<<< HEAD
         
+=======
+>>>>>>> af3ee684ab51ba9d036ed59f9c5ddedfd797ca51
         priority_colors = {1: "#FF4D4F", 2: "#FFA940", 3: "#1890FF"}
         p_color = priority_colors.get(self.data.get("priority", 2), "#BFBFBF")
         
@@ -81,6 +90,7 @@ class TaskCardWidget(QFrame):
         time_layout.addWidget(self.lbl_hours)
         layout.addLayout(time_layout)
 
+<<<<<<< HEAD
         self.cb_status.stateChanged.connect(self.on_status_changed)
 
     def on_status_changed(self, state):
@@ -94,10 +104,13 @@ class TaskCardWidget(QFrame):
         else:
             self.lbl_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #333;")
 
+=======
+>>>>>>> af3ee684ab51ba9d036ed59f9c5ddedfd797ca51
 class TaskListWidget(QWidget): 
     def __init__(self, facade=None) -> None:
         super().__init__()
         self.facade = facade
+<<<<<<< HEAD
         self.local_tasks = []
         self.init_mock_data()
         self.init_ui()
@@ -146,10 +159,14 @@ class TaskListWidget(QWidget):
                 "priority": 2
             }
         ]
+=======
+        self.init_ui()
+>>>>>>> af3ee684ab51ba9d036ed59f9c5ddedfd797ca51
 
     def init_ui(self):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
+<<<<<<< HEAD
 
         #创建新任务
         self.top_layout = QHBoxLayout()
@@ -171,6 +188,8 @@ class TaskListWidget(QWidget):
         self.top_layout.addWidget(self.btn_add_task)
         self.top_layout.addStretch()
         self.main_layout.addLayout(self.top_layout)
+=======
+>>>>>>> af3ee684ab51ba9d036ed59f9c5ddedfd797ca51
         
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -204,13 +223,60 @@ class TaskListWidget(QWidget):
                 pass
         
         if not tasks:
+<<<<<<< HEAD
             tasks = self.local_tasks
+=======
+            tasks = [
+                {
+                    "id": 1,
+                    "title": "高等数学A课后作业",
+                    "course_id": 101,
+                    "description": "作业真多啊啊啊啊啊",
+                    "due_time": datetime(2026, 5, 13, 18, 30),
+                    "estimated_hours": 2.5,
+                    "status": "done",
+                    "priority": 1
+                },
+                {
+                    "id": 2,
+                    "title": "程序设计实习大作业",
+                    "course_id": 202,
+                    "description": "完成魔兽世界大作业终极版！我需要一个很长很长的描述来测试它能不能换行诶现在好像已经很长了",
+                    "due_time": datetime(2026, 5, 14, 23, 59),
+                    "estimated_hours": 8.0,
+                    "status": "doing",
+                    "priority": 2
+                },
+                {
+                    "id": 3,
+                    "title": "AI引lab",
+                    "course_id": 305,
+                    "description": "完成AI引lab2：机器学习",
+                    "due_time": datetime(2026, 5, 26, 12, 0),
+                    "estimated_hours": 4.5,
+                    "status": "to do",
+                    "priority": 3
+                }, 
+                
+                {
+                    "id": 4,
+                    "title": "程序设计实习小组作业",
+                    "course_id": 202,
+                    "description": "完成程序设计实习小组作业DDL-Center(套娃hhhh)",
+                    "due_time": datetime(2026, 6, 6, 23, 59),
+                    "estimated_hours": 2333,
+                    "status": "doing",
+                    "priority": 2
+                }
+            ]
+>>>>>>> af3ee684ab51ba9d036ed59f9c5ddedfd797ca51
 
         for task in tasks:
             card = TaskCardWidget(task)
             self.list_layout.addWidget(card)
             
         self.list_layout.addStretch()
+<<<<<<< HEAD
     
     def show_add_task_dialog(self): 
         dialog = TaskEditorDialog(self)
@@ -240,6 +306,8 @@ class TaskListWidget(QWidget):
             }
             self.local_tasks.append(new_task)
             self.refresh_display()
+=======
+>>>>>>> af3ee684ab51ba9d036ed59f9c5ddedfd797ca51
 
 
 if __name__ == "__main__":
