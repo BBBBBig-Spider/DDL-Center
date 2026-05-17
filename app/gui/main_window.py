@@ -44,8 +44,4 @@ if __name__ == "__main__":
     test_widget.setWindowTitle("DDL Center - 主界面调试")
     test_widget.resize(1000, 700)
     test_widget.show()
-<<<<<<< HEAD
     sys.exit(app.exec())
-=======
-    sys.exit(app.exec())
->>>>>>> af3ee68 (feat: complete the basic frame of task list)
