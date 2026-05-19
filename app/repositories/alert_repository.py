@@ -1,18 +1,82 @@
 """app/repositories/alert_repository.py"""
 from __future__ import annotations
-from datetime import datetime, timedelta
+
+from datetime import datetime
 from typing import List
+
+from app.database.database_manager import DatabaseManager
 from app.models.alert import Alert
 
 
 class AlertRepository:
-    """alerts 表的增删改查。提供 add / list_unread / mark_read / delete_old。"""
+    """alerts 表的增删改查。提供 add / list_unread / list_all / mark_read / mark_all_read / delete_old / delete。"""
 
-    def __init__(self, db_manager):
+    VALID_LEVELS = {"info", "warning", "urgent", "overdue"}
+    VALID_KINDS = {"deadline", "overload", "progress"}
+    VALID_TARGET_TYPES = {"task", "day", "global"}
+
+    def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
+    @staticmethod
+    def _is_int(value: object) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool)
+
+    def _validate_alert(self, alert: Alert, *, require_id: bool = False) -> None:
+        if not isinstance(alert, Alert):
+            raise TypeError("alert must be an Alert")
+
+        if require_id and alert.id is None:
+            raise ValueError("alert.id is required")
+
+        if alert.id is not None and not self._is_int(alert.id):
+            raise TypeError("alert.id must be int or None")
+
+        if alert.task_id is not None and not self._is_int(alert.task_id):
+            raise TypeError("alert.task_id must be int or None")
+
+        if not isinstance(alert.level, str):
+            raise TypeError("alert.level must be str")
+
+        if alert.level not in self.VALID_LEVELS:
+            raise ValueError(
+                f"alert.level must be one of: {', '.join(sorted(self.VALID_LEVELS))}"
+            )
+
+        if not isinstance(alert.kind, str):
+            raise TypeError("alert.kind must be str")
+
+        if alert.kind not in self.VALID_KINDS:
+            raise ValueError(
+                f"alert.kind must be one of: {', '.join(sorted(self.VALID_KINDS))}"
+            )
+
+        if not isinstance(alert.message, str) or not alert.message.strip():
+            raise ValueError("alert.message cannot be empty")
+
+        if not isinstance(alert.created_at, datetime):
+            raise TypeError("alert.created_at must be datetime")
+
+        if not isinstance(alert.is_read, bool):
+            raise TypeError("alert.is_read must be bool")
+
+        if not isinstance(alert.target_type, str):
+            raise TypeError("alert.target_type must be str")
+
+        if alert.target_type not in self.VALID_TARGET_TYPES:
+            raise ValueError(
+                f"alert.target_type must be one of: {', '.join(sorted(self.VALID_TARGET_TYPES))}"
+            )
+
+        if alert.target_type == "task" and alert.task_id is None:
+            raise ValueError("alert.task_id is required when target_type='task'")
+
+        if alert.target_type != "task" and alert.task_id is not None:
+            raise ValueError(
+                "alert.task_id must be None when target_type is 'day' or 'global'"
+            )
+
     def _row_to_alert(self, row) -> Alert:
-        """把数据库的一行转成 Alert 对象。"""
         return Alert(
             id=row["id"],
             task_id=row["task_id"],
@@ -25,7 +89,7 @@ class AlertRepository:
         )
 
     def add(self, alert: Alert) -> int:
-        """插入一条提醒，返回新记录的 id。"""
+        self._validate_alert(alert)
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -56,7 +120,6 @@ class AlertRepository:
         return cursor.lastrowid
 
     def list_unread(self) -> List[Alert]:
-        """返回所有未读提醒，按生成时间倒序排列（最新的在前）。"""
         conn = self.db_manager.get_connection()
 
         cursor = conn.execute(
@@ -72,7 +135,6 @@ class AlertRepository:
         return [self._row_to_alert(row) for row in rows]
 
     def list_all(self) -> List[Alert]:
-        """返回所有提醒，按生成时间倒序排列。便于 AlertPanel 调用。"""
         conn = self.db_manager.get_connection()
 
         cursor = conn.execute(
@@ -87,7 +149,9 @@ class AlertRepository:
         return [self._row_to_alert(row) for row in rows]
 
     def mark_read(self, alert_id: int) -> bool:
-        """将某条提醒标记为已读。返回 True 表示找到了对应记录。"""
+        if not self._is_int(alert_id):
+            raise TypeError("alert_id must be int")
+
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -103,7 +167,6 @@ class AlertRepository:
         return cursor.rowcount > 0
 
     def mark_all_read(self) -> int:
-        """把全部未读提醒标记为已读，返回更新的行数。"""
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -118,10 +181,9 @@ class AlertRepository:
         return cursor.rowcount
 
     def delete_old(self, before: datetime) -> int:
-        """
-        删除 created_at 在 before 之前的提醒，返回删除的行数。
-        用于定期清理过期提醒，避免 alerts 表无限增长。
-        """
+        if not isinstance(before, datetime):
+            raise TypeError("before must be datetime")
+
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -136,7 +198,9 @@ class AlertRepository:
         return cursor.rowcount
 
     def delete(self, alert_id: int) -> bool:
-        """根据 id 删除提醒。返回 True 表示删除成功。"""
+        if not self._is_int(alert_id):
+            raise TypeError("alert_id must be int")
+
         conn = self.db_manager.get_connection()
 
         with conn:

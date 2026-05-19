@@ -1,18 +1,35 @@
 """app/repositories/setting_repository.py"""
 from __future__ import annotations
+
 from typing import Dict, Optional
+
+from app.database.database_manager import DatabaseManager
+
 
 class SettingRepository:
     """
-    user_settings 表的增删改查。
-    schema 很简单：key TEXT PRIMARY KEY, value TEXT NOT NULL
-    用于存放：每日 AI token 累计、上次同步时间、用户偏好等键值对。
+    user_settings 表的增删改查
+    用于存放：每日 AI token 累计、上次同步时间、用户偏好等键值对
     """
 
-    def __init__(self, db_manager):
+    def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
+    @staticmethod
+    def _validate_key(key: str) -> None:
+        if not isinstance(key, str):
+            raise TypeError("key must be str")
+
+        if not key:
+            raise ValueError("key cannot be empty")
+
+    @staticmethod
+    def _validate_value(value: str) -> None:
+        if not isinstance(value, str):
+            raise TypeError("value must be str")
+
     def get(self, key: str) -> Optional[str]:
+        self._validate_key(key)
         conn = self.db_manager.get_connection()
 
         cursor = conn.execute(
@@ -33,10 +50,11 @@ class SettingRepository:
 
     def set(self, key: str, value: str) -> None:
         """
-        写入或更新设置项。
-        用 INSERT ... ON CONFLICT(key) DO UPDATE 实现 upsert，
-        这样调用方不需要先 check 再决定 insert/update。
+        写入或更新设置项
         """
+        self._validate_key(key)
+        self._validate_value(value)
+
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -50,7 +68,6 @@ class SettingRepository:
             )
 
     def list_all(self) -> Dict[str, str]:
-        """返回所有设置项，作为 dict 返回，便于调用方一次拿走所有键。"""
         conn = self.db_manager.get_connection()
 
         cursor = conn.execute(
@@ -65,7 +82,8 @@ class SettingRepository:
         return {row["key"]: row["value"] for row in rows}
 
     def delete(self, key: str) -> bool:
-        """删除某个设置项。返回 True 表示找到了对应键。"""
+        """删除某个设置项"""
+        self._validate_key(key)
         conn = self.db_manager.get_connection()
 
         with conn:
