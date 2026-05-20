@@ -1,6 +1,7 @@
 import sys
 
 from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QApplication
+from app.gui.task_list_widget import TaskListWidget
 
 class MainWindow(QMainWindow): 
     def __init__(self, facade): 
@@ -20,8 +21,17 @@ class MainWindow(QMainWindow):
 
         welcome_label = QLabel("欢迎来到DDL指挥中心！请选择左侧功能。🕷️")
         self.content_area.addWidget(welcome_label)
-        
-    
+
+        self.task_list_page = TaskListWidget(facade = self.facade)
+        self.content_area.addWidget(self.task_list_page)
+
+        self.schedule_placeholder = QLabel("课表视图正在开发中，敬请期待！📅")
+        self.content_area.addWidget(self.schedule_placeholder)
+        self.ai_placeholder = QLabel("AI助手功能正在开发中，敬请期待！🤖")
+        self.content_area.addWidget(self.ai_placeholder)
+
+        self.connect_signals()
+
     def setup_sidebar(self): 
         sidebar_widget = QWidget()
         sidebar_layout = QVBoxLayout(sidebar_widget)
@@ -37,6 +47,17 @@ class MainWindow(QMainWindow):
         sidebar_layout.addStretch()
 
         self.main_layout.addWidget(sidebar_widget, stretch = 1)
+
+    def connect_signals(self):
+        self.btn_schedule.clicked.connect(lambda: self.content_area.setCurrentWidget(self.schedule_placeholder))
+        self.btn_tasks.clicked.connect(lambda: self.content_area.setCurrentWidget(self.task_list_page))
+        self.btn_ai.clicked.connect(lambda: self.content_area.setCurrentWidget(self.ai_placeholder))
+    
+    def switch_to_task_list(self):
+        self.content_area.setCurrentWidget(self.task_list_page)
+
+        if hasattr(self.task_list_page, "refresh_display"):
+            self.task_list_page.refresh_display()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

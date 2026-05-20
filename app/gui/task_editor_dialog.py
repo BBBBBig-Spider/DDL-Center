@@ -5,11 +5,14 @@ from PySide6.QtWidgets import (
     QDateTimeEdit, QSpinBox, QDialogButtonBox, QApplication, QMessageBox
 )
 from PySide6.QtCore import Qt, QDateTime
+from app.managers.app_facade import AppFacade
 
 class TaskEditorDialog(QDialog):
-    def __init__(self, parent = None, task_data = None): 
+    def __init__(self, parent = None, task_data = None, facade = None): 
         super().__init__(parent)
         self.task_data = task_data
+        self.facade = facade
+        self.db_courses = []
         if self.task_data: 
             self.setWindowTitle("编辑任务")
         else: 
@@ -17,6 +20,8 @@ class TaskEditorDialog(QDialog):
         
         self.resize(400, 300)
         self.init_ui()
+
+        self.load_courses_from_backend()
 
         if self.task_data: 
             self.load_task_data()
@@ -33,7 +38,6 @@ class TaskEditorDialog(QDialog):
         form_layout.addRow("任务标题:", self.title_input)
 
         self.course_combo = QComboBox()
-        self.course_combo.addItems(["高等数学A", "程序设计实习", "AI引论", "通用任务"])
         form_layout.addRow("所属课程:", self.course_combo)
 
         self.description_input = QLineEdit()
@@ -62,30 +66,41 @@ class TaskEditorDialog(QDialog):
 
         main_layout.addWidget(self.button_box)
 
-    def load_task_data(self):
-        self.title_input.setText(self.task_data.get("title", ""))
-        self.description_input.setText(self.task_data.get("description", ""))
+    def load_courses_from_backend(self): 
+        self.course_combo.clear()
+        self.course_combo.addItem("通用任务", userData = None)
+        try: 
+            self.db_courses = self.facade.list_courses()
+            for course in self.db_courses: 
+                c_id = course.get("id") if isinstance(course, dict) else getattr(course, "id", None)
+                c_name = course.get("name") if isinstance(course, dict) else getattr(course, "name", "未知课程")
+                self.course_combo.addItem(c_name, c_id)
+        except Exception as e:
+            print(f"[GUI] 获取课程失败: {e}")
+    
+    def _get_field(self, obj, key, default = " "):
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
 
-        course_id_map = {
-            101: "高等数学A",
-            202: "程序设计实习",
-            303: "AI引论",
-            None: "通用任务"
-        }
-        c_id = self.task_data.get("course_id")
-        c_text = course_id_map.get(c_id, "通用任务")
-        index = self.course_combo.findText(c_text)
+    def load_task_data(self):
+        self.title_input.setText(self._get_field(self.task_data, "title", ""))
+        self.description_input.setText(self._get_field(self.task_data, "description", ""))
+
+        target_course_id = self._get_field(self.task_data, "course_id", None)
+        index = self.course_combo.findData(target_course_id)
         if index != -1:
             self.course_combo.setCurrentIndex(index)
         
-        dt = self.task_data.get("due_time")
+        dt = self._get_field(self.task_data, "due_time", None)
         if dt:
-            self.due_time_input.setDateTime(QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute))
+            self.due_time_input.setDateTime(QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, 0))
         
-        self.estimated_hours_input.setValue(int(self.task_data.get("estimated_hours", 2)))
+        self.estimated_hours_input.setValue(int(self._get_field(self.task_data, "estimated_hours", 2)))
 
+        p_val = self._get_field(self.task_data, "priority", 2)
         p_map = {1: "高(红色)", 2: "中(黄色)", 3: "低(蓝色)"}
-        p_text = p_map.get(self.task_data.get("priority", 2), "中(黄色)")
+        p_text = p_map.get(p_val, "中(黄色)")
         p_index = self.priority_combo.findText(p_text)
         if p_index != -1:
             self.priority_combo.setCurrentIndex(p_index)
@@ -102,7 +117,7 @@ class TaskEditorDialog(QDialog):
     def get_task_data(self): 
         return {
             "title": self.title_input.text().strip(),
-            "course_name": self.course_combo.currentText(),
+            "course_id": self.course_combo.currentData(),
             "description": self.description_input.text().strip(),
             "due_time": self.due_time_input.dateTime().toPython(),
             "estimated_hours": self.estimated_hours_input.value(),
