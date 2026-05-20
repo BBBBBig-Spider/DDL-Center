@@ -55,17 +55,20 @@ class TaskCardWidget(QFrame):
         self.lbl_desc.setStyleSheet("color: #666; font-size: 12px;")
         self.lbl_desc.setWordWrap(True) 
 
+
         # 课程显示
         c_id = self._get_field("course_id", None)
         c_name = self._get_field("course_name", None) 
         course_text = f"📖 {c_name}" if c_name else (f"📖 课程ID: {c_id}" if c_id else "📅 通用任务")
             
+
         self.lbl_course = QLabel(course_text)
         self.lbl_course.setStyleSheet("color: #0078D4; font-size: 11px; font-weight: 500;")
 
         info_layout.addWidget(self.lbl_title)
         info_layout.addWidget(self.lbl_desc)
         info_layout.addWidget(self.lbl_course)
+
         layout.addLayout(info_layout, stretch=1)
 
         # 时间与耗时区
@@ -91,6 +94,7 @@ class TaskCardWidget(QFrame):
         time_layout.addWidget(self.lbl_deadline)
         time_layout.addWidget(self.lbl_hours)
         layout.addLayout(time_layout)
+
 
         self.confirm_widget = QWidget()
         confirm_layout = QVBoxLayout(self.confirm_widget)
@@ -239,10 +243,12 @@ class TaskCardWidget(QFrame):
             
             self.parent_widget.refresh_display()
 
+
 class TaskListWidget(QWidget): 
     def __init__(self, facade=None) -> None:
         super().__init__()
         self.facade = facade
+
         self.task_manager = getattr(facade, "task_manager", facade)
         
         self.all_mock_tasks = [
@@ -257,6 +263,13 @@ class TaskListWidget(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
 
+        self.init_ui()
+
+    def init_ui(self):
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+
+        #创建新任务
         self.top_layout = QHBoxLayout()
         self.btn_add_task = QPushButton("➕ 添加新任务")
         self.btn_add_task.setStyleSheet("""
@@ -286,6 +299,7 @@ class TaskListWidget(QWidget):
 
         self.top_layout.addStretch()
         self.main_layout.addLayout(self.top_layout)
+
         
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -357,6 +371,22 @@ class TaskListWidget(QWidget):
                 print(f"[GUI Mock Mode] 捕获弹窗数据: {payload}")
             
             self.refresh_display()
+        
+        tasks = []
+        if self.facade:
+            try:
+                tasks = self.facade.get_all_tasks()
+            except:
+                pass
+        
+        if not tasks:
+            tasks = self.local_tasks
+
+        for task in tasks:
+            card = TaskCardWidget(task)
+            self.list_layout.addWidget(card)
+            
+        self.list_layout.addStretch()
 
 
 if __name__ == "__main__":
