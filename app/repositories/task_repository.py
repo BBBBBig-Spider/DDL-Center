@@ -339,6 +339,29 @@ class TaskRepository:
         rows = cursor.fetchall()
         return [self._row_to_task(row) for row in rows]
 
+    def find_by_external_id(self, external_id: str) -> Optional[Task]:
+        """根据教学网任务 ID 查询任务，找不到返回 None。同步流程使用。"""
+        if not isinstance(external_id, str) or not external_id:
+            raise ValueError("external_id must be a non-empty str")
+
+        conn = self.db_manager.get_connection()
+
+        cursor = conn.execute(
+            """
+            SELECT *
+            FROM tasks
+            WHERE external_id = ?
+            """,
+            (external_id,),
+        )
+
+        row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_task(row)
+
     def list_due_before(self, deadline: datetime) -> List[Task]:
         """查询截止时间在 deadline 之前的所有未完成任务。"""
         self._validate_deadline(deadline)
