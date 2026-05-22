@@ -9,7 +9,13 @@ from app.models.exam import Exam
 
 
 class ExamRepository:
+<<<<<<< HEAD
     """exams 表的增删改查。"""
+=======
+    """exams 表的增删改查。
+    提供 add / get_by_id / list_all / list_by_course / update / delete / find_by_external_id。
+    """
+>>>>>>> bbf6c19 (add exam_repository.py,schedule_repository.py and sync_repository.py)
 
     VALID_EXAM_TYPES = {"midterm", "final", "quiz", "other"}
     VALID_SOURCES = {"manual", "sync"}
@@ -31,12 +37,21 @@ class ExamRepository:
         if exam.id is not None and not self._is_int(exam.id):
             raise TypeError("exam.id must be int or None")
 
+<<<<<<< HEAD
         if exam.course_id is not None and not self._is_int(exam.course_id):
             raise TypeError("exam.course_id must be int or None")
 
         if not isinstance(exam.name, str) or not exam.name.strip():
             raise ValueError("exam.name cannot be empty")
 
+=======
+        if not isinstance(exam.name, str) or not exam.name.strip():
+            raise ValueError("exam.name cannot be empty")
+
+        if exam.course_id is not None and not self._is_int(exam.course_id):
+            raise TypeError("exam.course_id must be int or None")
+
+>>>>>>> bbf6c19 (add exam_repository.py,schedule_repository.py and sync_repository.py)
         if not isinstance(exam.start_time, datetime):
             raise TypeError("exam.start_time must be datetime")
 
@@ -49,12 +64,26 @@ class ExamRepository:
         if not isinstance(exam.location, str):
             raise TypeError("exam.location must be str")
 
+<<<<<<< HEAD
         if not isinstance(exam.exam_type, str) or exam.exam_type not in self.VALID_EXAM_TYPES:
+=======
+        if not isinstance(exam.exam_type, str):
+            raise TypeError("exam.exam_type must be str")
+
+        if exam.exam_type not in self.VALID_EXAM_TYPES:
+>>>>>>> bbf6c19 (add exam_repository.py,schedule_repository.py and sync_repository.py)
             raise ValueError(
                 f"exam.exam_type must be one of: {', '.join(sorted(self.VALID_EXAM_TYPES))}"
             )
 
+<<<<<<< HEAD
         if not isinstance(exam.source, str) or exam.source not in self.VALID_SOURCES:
+=======
+        if not isinstance(exam.source, str):
+            raise TypeError("exam.source must be str")
+
+        if exam.source not in self.VALID_SOURCES:
+>>>>>>> bbf6c19 (add exam_repository.py,schedule_repository.py and sync_repository.py)
             raise ValueError(
                 f"exam.source must be one of: {', '.join(sorted(self.VALID_SOURCES))}"
             )
@@ -72,17 +101,18 @@ class ExamRepository:
             name=row["name"],
             start_time=datetime.fromisoformat(row["start_time"]),
             end_time=datetime.fromisoformat(row["end_time"]),
-            location=row["location"],
+            location=row["location"] or "",
             exam_type=row["exam_type"],
             source=row["source"],
             external_id=row["external_id"],
-            raw_payload=row["raw_payload"],
+            raw_payload=row["raw_payload"] or "",
         )
 
+    # ─── 增 ────────────────────────────────────────────────────
+
     def add(self, exam: Exam) -> int:
+        """插入一条考试记录，返回新记录的 id。"""
         self._validate_exam(exam)
-        if exam.id is not None:
-            raise ValueError("exam.id must be None for add(); use update() instead")
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -172,7 +202,10 @@ class ExamRepository:
 
         return cursor.rowcount > 0
 
+    # ─── 删 ────────────────────────────────────────────────────
+
     def delete(self, exam_id: int) -> bool:
+        """根据 id 删除考试。返回 True 表示删除成功。"""
         if not self._is_int(exam_id):
             raise TypeError("exam_id must be int")
 

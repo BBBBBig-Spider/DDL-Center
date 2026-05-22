@@ -14,6 +14,7 @@ class ScheduleRepository:
     VALID_SLOT_TYPES = {"lecture", "lab", "tutorial", "custom", "free"}
     VALID_WEEK_TYPES = {"all", "odd", "even"}
     VALID_SOURCES = {"manual", "sync"}
+    VALID_WEEKDAYS = set(range(1, 8))  # 1=Monday ... 7=Sunday
 
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
@@ -79,6 +80,18 @@ class ScheduleRepository:
 
         if slot.external_id is not None and not isinstance(slot.external_id, str):
             raise TypeError("slot.external_id must be str or None")
+
+    def _validate_weekday(self, weekday: int) -> None:
+        if not self._is_int(weekday):
+            raise TypeError("weekday must be int")
+        if weekday not in self.VALID_WEEKDAYS:
+            raise ValueError("weekday must be in 1..7")
+
+    def _validate_week(self, week: int) -> None:
+        if not self._is_int(week):
+            raise TypeError("week must be int")
+        if week < 1:
+            raise ValueError("week must be >= 1")
 
     def _row_to_slot(self, row) -> ScheduleSlot:
         return ScheduleSlot(
