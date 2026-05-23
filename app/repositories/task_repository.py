@@ -139,8 +139,10 @@ class TaskRepository:
     # ─── 增 ────────────────────────────────────────────────────
 
     def add(self, task: Task) -> int:
-        """插入一条任务，返回新记录的 id。"""
+        """插入一条任务，返回新记录的 id，并把 id 回写到入参对象。"""
         self._validate_task(task)
+        if task.id is not None:
+            raise ValueError("task.id must be None for add(); use update() instead")
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -184,6 +186,7 @@ class TaskRepository:
                 ),
             )
 
+        task.id = cursor.lastrowid
         return cursor.lastrowid
 
     # ─── 查全部 ────────────────────────────────────────────────

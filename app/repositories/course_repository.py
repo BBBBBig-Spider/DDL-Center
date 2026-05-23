@@ -69,8 +69,10 @@ class CourseRepository:
         )
 
     def add(self, course: Course) -> int:
-        """插入一门课程，返回新记录的 id。"""
+        """插入一门课程，返回新记录的 id，并把 id 回写到入参对象。"""
         self._validate_course(course)
+        if course.id is not None:
+            raise ValueError("course.id must be None for add(); use update() instead")
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -98,6 +100,7 @@ class CourseRepository:
                 ),
             )
 
+        course.id = cursor.lastrowid
         return cursor.lastrowid
 
     def list_all(self) -> List[Course]:

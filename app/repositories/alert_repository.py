@@ -85,11 +85,13 @@ class AlertRepository:
             message=row["message"],
             created_at=datetime.fromisoformat(row["created_at"]),
             is_read=bool(row["is_read"]),
-            target_type=row["target_type"] or "task",
+            target_type=row["target_type"],
         )
 
     def add(self, alert: Alert) -> int:
         self._validate_alert(alert)
+        if alert.id is not None:
+            raise ValueError("alert.id must be None for add(); use update() instead")
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -117,7 +119,39 @@ class AlertRepository:
                 ),
             )
 
+        alert.id = cursor.lastrowid
         return cursor.lastrowid
+
+    def update(self, alert: Alert) -> bool:
+        """根据 alert.id 更新整条记录（created_at 不可变）。"""
+        self._validate_alert(alert, require_id=True)
+        conn = self.db_manager.get_connection()
+
+        with conn:
+            cursor = conn.execute(
+                """
+                UPDATE alerts
+                SET
+                    task_id = ?,
+                    target_type = ?,
+                    level = ?,
+                    kind = ?,
+                    message = ?,
+                    is_read = ?
+                WHERE id = ?
+                """,
+                (
+                    alert.task_id,
+                    alert.target_type,
+                    alert.level,
+                    alert.kind,
+                    alert.message,
+                    int(alert.is_read),
+                    alert.id,
+                ),
+            )
+
+        return cursor.rowcount > 0
 
     def list_unread(self) -> List[Alert]:
         conn = self.db_manager.get_connection()
