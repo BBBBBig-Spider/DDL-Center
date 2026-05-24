@@ -1,8 +1,9 @@
 import sys
-from PySide6.QtWidgets import (QScrollArea, QVBoxLayout, QWidget, QHBoxLayout, QMenu, QComboBox,
+from PySide6.QtWidgets import (QScrollArea, QVBoxLayout, QWidget, QHBoxLayout, QMenu, QComboBox, QTabBar, QStackedWidget, 
                                QPushButton, QCheckBox, QLabel, QFrame, QApplication, QDialog, QMessageBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+
 from datetime import datetime
 
 from app.gui.task_editor_dialog import TaskEditorDialog
@@ -34,6 +35,8 @@ class TaskCardWidget(QFrame):
         self.customContextMenuRequested.connect(self.show_context_menu)
 
         layout = QHBoxLayout(self)
+
+        self.status_val = self._get_field("status", "to do")
 
         # 状态复选框
         self.cb_status = QCheckBox()
@@ -93,7 +96,7 @@ class TaskCardWidget(QFrame):
 
         time_layout.addWidget(self.lbl_deadline)
         time_layout.addWidget(self.lbl_hours)
-        layout.addLayout(time_layout)
+        layout.addWidget(self.time_widget)
 
 
         self.confirm_widget = QWidget()
@@ -259,15 +262,14 @@ class TaskListWidget(QWidget):
         self.init_ui()
         self.refresh_display()
     
-    def init_ui(self):
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
-
-        self.init_ui()
 
     def init_ui(self):
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        
+        self.main_container_layout = QHBoxLayout(self)
+        self.main_container_layout.setContentsMargins(10, 10, 10, 10)
+
+        self.main_layout = QVBoxLayout()
+        self.main_container_layout.addLayout(self.main_layout, stretch=1)
 
         #创建新任务
         self.top_layout = QHBoxLayout()
@@ -300,6 +302,25 @@ class TaskListWidget(QWidget):
         self.top_layout.addStretch()
         self.main_layout.addLayout(self.top_layout)
 
+        from app.gui.course_board_widget import CourseBoardWidget
+        from app.gui.time_line_widget import TimelineWidget
+        from PySide6.QtWidgets import QTabBar, QStackedWidget
+
+        self.view_tab_bar = QTabBar()
+        self.view_tab_bar.addTab("常规任务清单")
+        self.view_tab_bar.addTab("按课程分类")
+        self.view_tab_bar.addTab("按时间轴线")
+        self.view_tab_bar.setStyleSheet("""
+            QTabBar::tab {
+                background: #E1E1E1; color: #333; padding: 6px 15px; 
+                border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px;
+                font-size: 12px;
+            }
+            QTabBar::tab:selected { background: white; font-weight: bold; color: #0078D4; }
+            QTabBar::tab:hover { background: #ECECEC; }
+        """)
+        self.main_layout.addWidget(self.view_tab_bar)
+
         
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -314,9 +335,35 @@ class TaskListWidget(QWidget):
         self.list_layout.setSpacing(12)
 
         self.scroll_area.setWidget(self.container)
-        self.main_layout.addWidget(self.scroll_area)
+        self.view_board = CourseBoardWidget(facade = self.facade)
+        self.view_timeline = TimelineWidget(facade = self.facade)
+
+        self.stacked_views = QStackedWidget()
+        self.stacked_views.addWidget(self.scroll_area)
+        self.stacked_views.addWidget(self.view_board)
+        self.stacked_views.addWidget(self.view_timeline)
+
+        self.main_layout.addWidget(self.stacked_views)
+
+        self.view_tab_bar.currentChanged.connect(self.on_view_changed)
+
+        from app.gui.widgets.alert_panel import AlertPanel
+        self.right_alert_panel = AlertPanel(facade=self.facade)
+        self.main_container_layout.addWidget(self.right_alert_panel)
+
 
     def refresh_display(self):
+        current_view = self.stacked_views.currentWidget() if hasattr(self, 'stacked_views') else None
+        if current_view and current_view != self.scroll_area:
+            selected_status = self.status_combo.currentData()
+            filters = {"status": selected_status}  if selected_status else {}
+
+            if hasattr(current_view, "refresh_display"): 
+                current_view.refresh_display(filters)
+            if hasattr(self, "right_alert_panel"): 
+                self.right_alert_panel.refresh_display()
+            return
+        
         while self.list_layout.count():
             item = self.list_layout.takeAt(0)
             if item.widget():
@@ -388,6 +435,15 @@ class TaskListWidget(QWidget):
             
         self.list_layout.addStretch()
 
+    def on_view_changed(self, index): 
+        self.stacked_views.setCurrentIndex(index)
+        active_widget = self.stacked_views.currentWidget()
+
+        if index == 0: 
+            self.refresh_display()
+        elif active_widget and hasattr(active_widget, "refresh_display"): 
+            active_widget.refresh_display()
+        
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
