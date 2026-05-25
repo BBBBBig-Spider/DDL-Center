@@ -118,7 +118,7 @@ class TaskRepository:
             title=row["title"],
             course_id=row["course_id"],
             related_exam_id=row["related_exam_id"],
-            description=row["description"] or "",
+            description=row["description"],
             due_time=datetime.fromisoformat(row["due_time"]),
             estimated_hours=row["estimated_hours"],
             status=row["status"],
@@ -133,14 +133,16 @@ class TaskRepository:
                 if row["completed_at"]
                 else None
             ),
-            raw_payload=row["raw_payload"] or "",
+            raw_payload=row["raw_payload"],
         )
 
     # ─── 增 ────────────────────────────────────────────────────
 
     def add(self, task: Task) -> int:
-        """插入一条任务，返回新记录的 id。"""
+        """插入一条任务，返回新记录的 id，并把 id 回写到入参对象。"""
         self._validate_task(task)
+        if task.id is not None:
+            raise ValueError("task.id must be None for add(); use update() instead")
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -184,6 +186,7 @@ class TaskRepository:
                 ),
             )
 
+        task.id = cursor.lastrowid
         return cursor.lastrowid
 
     # ─── 查全部 ────────────────────────────────────────────────
@@ -338,6 +341,29 @@ class TaskRepository:
 
         rows = cursor.fetchall()
         return [self._row_to_task(row) for row in rows]
+
+    def find_by_external_id(self, external_id: str) -> Optional[Task]:
+        """根据教学网任务 ID 查询任务，找不到返回 None。同步流程使用。"""
+        if not isinstance(external_id, str) or not external_id:
+            raise ValueError("external_id must be a non-empty str")
+
+        conn = self.db_manager.get_connection()
+
+        cursor = conn.execute(
+            """
+            SELECT *
+            FROM tasks
+            WHERE external_id = ?
+            """,
+            (external_id,),
+        )
+
+        row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_task(row)
 
     def list_due_before(self, deadline: datetime) -> List[Task]:
         """查询截止时间在 deadline 之前的所有未完成任务。"""
