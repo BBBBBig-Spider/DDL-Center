@@ -1,24 +1,9 @@
-"""app/managers/alert_manager.py
-
-Day 10-13: 提醒生成。基于 tasks 与 config.py 中的阈值，产出三类提醒：
-
-  1) deadline       —— 每个未完成任务一条（取最严重等级）
-                       * overdue:  due_time <= now
-                       * urgent:   now < due_time <= now + ALERT_DAYS_URGENT 天
-                       * warning:  now < due_time <= now + ALERT_DAYS_WARNING 天
-  2) overload       —— 同一天的未完成 DDL >= OVERLOAD_THRESHOLD 时，
-                       target_type='day'，task_id=None
-  3) deadline (close) —— 同一未完成任务集合中，相邻两个 DDL 之间间隔 <
-                       CLOSE_DEADLINE_HOURS 小时时各自再发一条 warning 提醒
-
-调用 ``AlertManager.generate_alerts(now=...)`` 会把上述提醒写入 alert 表，
-返回本次新写入的 Alert 列表。重复调用是幂等的：同一 (task_id, kind, level)
-组合在已有未读条目时不会重复插入。
-"""
+"""app/managers/alert_manager.py"""
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timedelta
-from typing import Iterable, List
+from typing import List
 
 from app.config import (
     ALERT_DAYS_URGENT,
@@ -36,68 +21,62 @@ __all__ = ["AlertManager"]
 
 
 class AlertManager:
+    """提醒生成与持久化。4 个 detection 方法是纯函数；
+    generate_alerts() 是聚合入口，由 AppFacade 调用。"""
+
     def __init__(
         self,
-        alert_repository: AlertRepository,
-        task_repository: TaskRepository,
+        task_repository: TaskRepository | None = None,
+        alert_repository: AlertRepository | None = None,
     ):
-        if not isinstance(alert_repository, AlertRepository):
-            raise TypeError("alert_repository must be an AlertRepository")
-        if not isinstance(task_repository, TaskRepository):
-            raise TypeError("task_repository must be a TaskRepository")
-        self.alert_repository = alert_repository
         self.task_repository = task_repository
+        self.alert_repository = alert_repository
 
-    # ─── public API ────────────────────────────────────────────────
+    # ─── 聚合入口：拉 task → 跑 3 类 → 持久化（去重） ──────────
 
-    def generate_alerts(self, now: datetime | None = None) -> List[Alert]:
-        """生成提醒。返回本次写入数据库的新 Alert 列表。"""
-        if now is None:
-            now = datetime.now()
-        if not isinstance(now, datetime):
-            raise TypeError("now must be datetime or None")
+    @staticmethod
+    def _signature(alert: Alert) -> tuple:
+        return (alert.target_type, alert.task_id, alert.kind, alert.level, alert.message)
 
-        active_tasks = [t for t in self.task_repository.list_all() if not t.is_done()]
-        existing = self._existing_signatures()
+    def generate_alerts(self) -> List[Alert]:
+        if self.task_repository is None or self.alert_repository is None:
+            raise RuntimeError("AlertManager needs task_repository and alert_repository")
 
-        new_alerts: List[Alert] = []
-        new_alerts.extend(self._deadline_alerts(active_tasks, now, existing))
-        new_alerts.extend(self._overload_alerts(active_tasks, existing))
-        new_alerts.extend(self._close_deadline_alerts(active_tasks, existing))
+        tasks = self.task_repository.list_all()
+        now = datetime.now()
 
-        for alert in new_alerts:
+        candidates: List[Alert] = []
+        candidates.extend(self.generate_deadline_alerts(tasks, now))
+        candidates.extend(self.detect_same_day_overload(tasks))
+        candidates.extend(self.detect_close_deadlines(tasks))
+
+        seen = {self._signature(a) for a in self.alert_repository.list_all()}
+
+        produced: List[Alert] = []
+        for alert in candidates:
+            sig = self._signature(alert)
+            if sig in seen:
+                continue
+            seen.add(sig)
             self.alert_repository.add(alert)
+            produced.append(alert)
 
-        return new_alerts
+        return produced
 
-    def list_unread(self) -> List[Alert]:
-        return self.alert_repository.list_unread()
+    # ─── 截止日提醒（3 天 / 1 天 / 逾期） ───────────────────────
 
-    def list_all(self) -> List[Alert]:
-        return self.alert_repository.list_all()
-
-    def mark_read(self, alert_id: int) -> bool:
-        if not isinstance(alert_id, int) or isinstance(alert_id, bool):
-            raise TypeError("alert_id must be int")
-        return self.alert_repository.mark_read(alert_id)
-
-    def mark_all_read(self) -> int:
-        return self.alert_repository.mark_all_read()
-
-    # ─── deadline ───────────────────────────────────────────────────
-
-    def _deadline_alerts(
-        self,
-        tasks: Iterable[Task],
-        now: datetime,
-        existing: set[tuple],
+    def generate_deadline_alerts(
+        self, tasks: List[Task], now: datetime
     ) -> List[Alert]:
-        alerts: List[Alert] = []
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+
         warning_window = timedelta(days=ALERT_DAYS_WARNING)
         urgent_window = timedelta(days=ALERT_DAYS_URGENT)
 
+        alerts: List[Alert] = []
         for task in tasks:
-            if task.id is None:
+            if task.is_done():
                 continue
 
             if task.due_time <= now:
@@ -105,15 +84,11 @@ class AlertManager:
                 message = f"任务「{task.title}」已逾期"
             elif task.due_time <= now + urgent_window:
                 level = "urgent"
-                message = f"任务「{task.title}」将在 24 小时内到期"
+                message = f"任务「{task.title}」将在 {ALERT_DAYS_URGENT} 天内到期"
             elif task.due_time <= now + warning_window:
                 level = "warning"
                 message = f"任务「{task.title}」将在 {ALERT_DAYS_WARNING} 天内到期"
             else:
-                continue
-
-            signature = ("task", task.id, "deadline", level)
-            if signature in existing:
                 continue
 
             alerts.append(
@@ -124,78 +99,55 @@ class AlertManager:
                     kind="deadline",
                     message=message,
                     created_at=now,
-                    is_read=False,
                 )
             )
-            existing.add(signature)
 
         return alerts
 
-    # ─── overload ──────────────────────────────────────────────────
+    # ─── 同日 DDL 过多预警 ────────────────────────────────────
 
-    def _overload_alerts(
-        self,
-        tasks: Iterable[Task],
-        existing: set[tuple],
-    ) -> List[Alert]:
-        from collections import defaultdict
-
-        per_day: dict[str, list[Task]] = defaultdict(list)
+    def detect_same_day_overload(self, tasks: List[Task]) -> List[Alert]:
+        counter: Counter[str] = Counter()
         for task in tasks:
-            per_day[task.due_time.date().isoformat()].append(task)
+            if task.is_done():
+                continue
+            counter[task.due_time.date().isoformat()] += 1
 
         alerts: List[Alert] = []
-        for day_key, day_tasks in per_day.items():
-            if len(day_tasks) < OVERLOAD_THRESHOLD:
+        for day_key, count in counter.items():
+            if count < OVERLOAD_THRESHOLD:
                 continue
-
-            signature = ("day", day_key, "overload", "warning")
-            if signature in existing:
-                continue
-
-            message = f"{day_key} 这一天有 {len(day_tasks)} 个 DDL，注意分配时间"
             alerts.append(
                 Alert(
                     task_id=None,
                     target_type="day",
                     level="warning",
                     kind="overload",
-                    message=message,
-                    is_read=False,
+                    message=f"{day_key} 共有 {count} 个 DDL，注意分配时间",
                 )
             )
-            existing.add(signature)
 
         return alerts
 
-    # ─── close-deadline pairs ──────────────────────────────────────
+    # ─── 相邻 DDL 间隔过短预警 ───────────────────────────────
 
-    def _close_deadline_alerts(
-        self,
-        tasks: Iterable[Task],
-        existing: set[tuple],
-    ) -> List[Alert]:
-        sorted_tasks = sorted(
-            (t for t in tasks if t.id is not None),
+    def detect_close_deadlines(self, tasks: List[Task]) -> List[Alert]:
+        active = sorted(
+            (t for t in tasks if not t.is_done()),
             key=lambda t: t.due_time,
         )
-        if len(sorted_tasks) < 2:
-            return []
 
         close_window = timedelta(hours=CLOSE_DEADLINE_HOURS)
-        flagged: set[int] = set()
+        flagged: set[int | None] = set()
         alerts: List[Alert] = []
 
-        for prev, curr in zip(sorted_tasks, sorted_tasks[1:]):
+        for prev, curr in zip(active, active[1:]):
             if curr.due_time - prev.due_time >= close_window:
                 continue
             for task in (prev, curr):
                 if task.id in flagged:
                     continue
-                signature = ("task", task.id, "deadline", "close")
-                if signature in existing:
-                    flagged.add(task.id)
-                    continue
+                flagged.add(task.id)
                 alerts.append(
                     Alert(
                         task_id=task.id,
@@ -206,29 +158,29 @@ class AlertManager:
                             f"任务「{task.title}」与相邻 DDL 间隔不足 "
                             f"{CLOSE_DEADLINE_HOURS} 小时"
                         ),
-                        is_read=False,
                     )
                 )
-                flagged.add(task.id)
-                existing.add(signature)
 
         return alerts
 
-    # ─── existing signature index ──────────────────────────────────
+    # ─── 进度提醒（基于 StatisticsData） ──────────────────────
 
-    def _existing_signatures(self) -> set[tuple]:
-        """读出 alerts 表里已有的(task_id 或 day_key, kind, level/close)签名，
-        让 generate_alerts() 幂等。"""
-        signatures: set[tuple] = set()
-        for alert in self.alert_repository.list_all():
-            if alert.target_type == "task" and alert.task_id is not None:
-                signatures.add(("task", alert.task_id, alert.kind, alert.level))
-                if alert.kind == "deadline" and "间隔不足" in alert.message:
-                    signatures.add(("task", alert.task_id, "deadline", "close"))
-            elif alert.target_type == "day":
-                day_key = alert.created_at.date().isoformat()
-                if "这一天有" in alert.message:
-                    head = alert.message.split(" 这一天", 1)[0]
-                    day_key = head.strip() or day_key
-                signatures.add(("day", day_key, alert.kind, alert.level))
-        return signatures
+    def generate_progress_alert(self, statistics) -> List[Alert]:
+        """完成率过低时生成一条全局 progress 提醒。
+        StatisticsData 还未定型，按 duck-typing 取 completion_rate。"""
+        rate = getattr(statistics, "completion_rate", None)
+        if rate is None:
+            return []
+
+        if rate >= 0.5:
+            return []
+
+        return [
+            Alert(
+                task_id=None,
+                target_type="global",
+                level="info",
+                kind="progress",
+                message=f"近期完成率仅 {rate:.0%}，注意补进度",
+            )
+        ]
