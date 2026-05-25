@@ -9,13 +9,19 @@ from app.models.schedule_slot import ScheduleSlot
 from app.models.alert import Alert
 
 from app.managers.task_manager import TaskManager
+from app.managers.alert_manager import AlertManager
 
 __all__ = ["AppFacade"]
 
 
 class AppFacade:
-    def __init__(self, task_manager: TaskManager):
+    def __init__(
+        self,
+        task_manager: TaskManager,
+        alert_manager: AlertManager | None = None,
+    ):
         self.task_manager = task_manager
+        self.alert_manager = alert_manager
     def create_task(self, data: dict) -> int:
         return self.task_manager.create_task(data)
     def update_task(self, task_id: int, data: dict) -> None:
@@ -44,19 +50,33 @@ class AppFacade:
         raise NotImplementedError
 
     def generate_alerts(self) -> list[Alert]:
-        raise NotImplementedError
+        if self.alert_manager is None:
+            raise RuntimeError("alert_manager not wired into AppFacade")
+        return self.alert_manager.generate_alerts()
+    def list_unread_alerts(self) -> list[Alert]:
+        if self.alert_manager is None:
+            raise RuntimeError("alert_manager not wired into AppFacade")
+        return self.alert_manager.list_unread()
+    def mark_alert_read(self, alert_id: int) -> bool:
+        if self.alert_manager is None:
+            raise RuntimeError("alert_manager not wired into AppFacade")
+        return self.alert_manager.mark_read(alert_id)
+    def mark_all_alerts_read(self) -> int:
+        if self.alert_manager is None:
+            raise RuntimeError("alert_manager not wired into AppFacade")
+        return self.alert_manager.mark_all_read()
     def recommend_for_task(self, task_id: int) -> list[ScheduleSlot]:
         raise NotImplementedError
 
-    def sync_from_teaching_site(self, username: str, password: str) -> SyncResult:
+    def sync_from_teaching_site(self, username: str, password: str):
         raise NotImplementedError
-    def get_statistics(self) -> StatisticsData:
+    def get_statistics(self):
         raise NotImplementedError
 
     # ─── AI 相关 ───
     def ai_decompose_task(self, description: str, due_time: datetime) -> list[dict]:  # 功能 1
         raise NotImplementedError
-    def ai_chat(self, conversation_id: int | None, user_msg: str, 
+    def ai_chat(self, conversation_id: int | None, user_msg: str,
                 context_task_id: int | None = None) -> tuple[int, str]:         # 功能 3
         raise NotImplementedError
     def ai_generate_briefing(self) -> str:                                          # 功能 4

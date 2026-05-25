@@ -7,6 +7,14 @@ from datetime import datetime
 __all__ = ["Alert"]
 
 
+_LEVEL_LABELS = {
+    "info": "提示",
+    "warning": "提醒",
+    "urgent": "紧急",
+    "overdue": "已逾期",
+}
+
+
 @dataclass
 class Alert:
     level: str                                                  # info / warning / urgent / overdue
@@ -19,10 +27,12 @@ class Alert:
     target_type: str = "task"                                   # 'task' | 'day' | 'global'
 
     def is_urgent(self) -> bool:
-        raise NotImplementedError
+        return self.level in ("urgent", "overdue")
+
     def display_text(self) -> str:
-        raise NotImplementedError
-    
+        label = _LEVEL_LABELS.get(self.level, self.level)
+        return f"[{label}] {self.message}"
+
 
 if __name__ == "__main__":
     a = Alert(task_id=1, level="info", kind="progress", message="Test")

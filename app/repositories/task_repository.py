@@ -118,7 +118,7 @@ class TaskRepository:
             title=row["title"],
             course_id=row["course_id"],
             related_exam_id=row["related_exam_id"],
-            description=row["description"] or "",
+            description=row["description"],
             due_time=datetime.fromisoformat(row["due_time"]),
             estimated_hours=row["estimated_hours"],
             status=row["status"],
@@ -133,7 +133,7 @@ class TaskRepository:
                 if row["completed_at"]
                 else None
             ),
-            raw_payload=row["raw_payload"] or "",
+            raw_payload=row["raw_payload"],
         )
 
     # ─── 增 ────────────────────────────────────────────────────

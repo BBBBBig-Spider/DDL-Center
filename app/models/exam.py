@@ -7,6 +7,14 @@ from datetime import datetime
 __all__ = ["Exam"]
 
 
+_EXAM_TYPE_LABELS = {
+    "midterm": "期中",
+    "final": "期末",
+    "quiz": "小测",
+    "other": "考试",
+}
+
+
 @dataclass
 class Exam:
     name: str                       # 考试名称
@@ -21,18 +29,29 @@ class Exam:
     raw_payload: str = ""           # 原始同步内容，调试用
 
     def duration_hours(self) -> float:
-        raise NotImplementedError
+        return (self.end_time - self.start_time).total_seconds() / 3600.0
+
     def is_finished(self, now: datetime) -> bool:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        return now > self.end_time
+
     def is_upcoming(self, now: datetime) -> bool:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        return self.start_time > now
+
     def days_left(self, now: datetime) -> int:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        return (self.start_time - now).days
+
     def display_name(self) -> str:
-        raise NotImplementedError
+        label = _EXAM_TYPE_LABELS.get(self.exam_type, self.exam_type)
+        return f"{self.name}（{label}）"
 
 
 if __name__ == "__main__":
-    e = Exam(name="Test exam", start_time=datetime.now(), 
+    e = Exam(name="Test exam", start_time=datetime.now(),
              end_time=datetime.now(), location="理教")
     print(e)

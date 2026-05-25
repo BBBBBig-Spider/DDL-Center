@@ -1,12 +1,12 @@
 CREATE TABLE IF NOT EXISTS courses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    teacher TEXT DEFAULT '',
-    semester TEXT DEFAULT '',
+    teacher TEXT NOT NULL DEFAULT '',
+    semester TEXT NOT NULL DEFAULT '',
     external_id TEXT,
-    color TEXT DEFAULT '#4F81BD',
+    color TEXT NOT NULL DEFAULT '#4F81BD',
     source TEXT NOT NULL DEFAULT 'manual',
-    raw_payload TEXT DEFAULT ''
+    raw_payload TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT NOT NULL,
     course_id INTEGER,
     related_exam_id INTEGER,
-    description TEXT DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
     due_time TEXT NOT NULL,
     estimated_hours REAL NOT NULL DEFAULT 1.0,
     status TEXT NOT NULL DEFAULT 'todo',
@@ -25,9 +25,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT,
-    raw_payload TEXT DEFAULT '',
-    FOREIGN KEY (course_id) REFERENCES courses(id),
-    FOREIGN KEY (related_exam_id) REFERENCES exams(id)
+    raw_payload TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
+    FOREIGN KEY (related_exam_id) REFERENCES exams(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS schedule_slots (
@@ -37,14 +37,14 @@ CREATE TABLE IF NOT EXISTS schedule_slots (
     weekday INTEGER NOT NULL,
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
-    location TEXT DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
     slot_type TEXT NOT NULL DEFAULT 'lecture',
     start_week INTEGER NOT NULL DEFAULT 1,
     end_week INTEGER NOT NULL DEFAULT 16,
     week_type TEXT NOT NULL DEFAULT 'all',
     source TEXT NOT NULL DEFAULT 'manual',
     external_id TEXT,
-    FOREIGN KEY (course_id) REFERENCES courses(id)
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS exams (
@@ -53,12 +53,12 @@ CREATE TABLE IF NOT EXISTS exams (
     name TEXT NOT NULL,
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
-    location TEXT DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
     exam_type TEXT NOT NULL DEFAULT 'other',
     source TEXT NOT NULL DEFAULT 'manual',
     external_id TEXT,
-    raw_payload TEXT DEFAULT '',
-    FOREIGN KEY (course_id) REFERENCES courses(id)
+    raw_payload TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -93,4 +93,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_time ON tasks(due_time);
 CREATE INDEX IF NOT EXISTS idx_tasks_course_id ON tasks(course_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_external_id ON tasks(external_id);
+CREATE INDEX IF NOT EXISTS idx_courses_external_id ON courses(external_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at);
+CREATE INDEX IF NOT EXISTS idx_alerts_is_read ON alerts(is_read);
 CREATE INDEX IF NOT EXISTS idx_sync_records_external ON sync_records(source_type, external_id);

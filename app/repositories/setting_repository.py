@@ -28,7 +28,7 @@ class SettingRepository:
         if not isinstance(value, str):
             raise TypeError("value must be str")
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
         self._validate_key(key)
         conn = self.db_manager.get_connection()
 
@@ -44,7 +44,7 @@ class SettingRepository:
         row = cursor.fetchone()
 
         if row is None:
-            return None
+            return default
 
         return row["value"]
 

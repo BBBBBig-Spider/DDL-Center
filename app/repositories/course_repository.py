@@ -60,12 +60,12 @@ class CourseRepository:
         return Course(
             id=row["id"],
             name=row["name"],
-            teacher=row["teacher"] or "",
-            semester=row["semester"] or "",
+            teacher=row["teacher"],
+            semester=row["semester"],
             external_id=row["external_id"],
-            color=row["color"] or "#4F81BD",
+            color=row["color"],
             source=row["source"],
-            raw_payload=row["raw_payload"] or "",
+            raw_payload=row["raw_payload"],
         )
 
     def add(self, course: Course) -> int:

@@ -16,10 +16,13 @@ class Course:
     raw_payload: str = ""           # 原始同步内容，调试用
 
     def display_name(self) -> str:
-        raise NotImplementedError
+        if self.teacher and self.teacher.strip():
+            return f"{self.name}（{self.teacher.strip()}）"
+        return self.name
+
     def has_external_id(self) -> bool:
-        raise NotImplementedError
-    
+        return self.external_id is not None and bool(self.external_id.strip())
+
 
 if __name__ == "__main__":
     c = Course("Test")
