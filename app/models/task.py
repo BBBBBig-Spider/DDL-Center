@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 __all__ = ["Task"]
 
@@ -23,19 +23,53 @@ class Task:
     raw_payload: str = ""                                      # 调试用原始同步内容
 
     def mark_done(self, now: datetime) -> None:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        self.status = "done"
+        self.completed_at = now
+        self.updated_at = now
+
     def reopen(self, now: datetime) -> None:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        self.status = "todo"
+        self.completed_at = None
+        self.updated_at = now
+
     def is_done(self) -> bool:
-        raise NotImplementedError
+        return self.status == "done"
+
     def is_overdue(self, now: datetime) -> bool:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        return not self.is_done() and self.due_time < now
+
     def is_due_within(self, now: datetime, days: int) -> bool:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        if not isinstance(days, int) or isinstance(days, bool):
+            raise TypeError("days must be int")
+        if days < 0:
+            raise ValueError("days must be >= 0")
+        if self.is_done():
+            return False
+        return now <= self.due_time <= now + timedelta(days=days)
+
     def days_left(self, now: datetime) -> int:
-        raise NotImplementedError
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        delta = self.due_time - now
+        return delta.days
+
     def update_estimated_hours(self, hours: float, now: datetime) -> None:
-        raise NotImplementedError
+        if not isinstance(hours, (int, float)) or isinstance(hours, bool):
+            raise TypeError("hours must be a number")
+        if hours < 0:
+            raise ValueError("hours must be >= 0")
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        self.estimated_hours = float(hours)
+        self.updated_at = now
 
 
 if __name__ == "__main__":
