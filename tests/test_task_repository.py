@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from datetime import datetime, timedelta
 
 import pytest
@@ -11,7 +12,7 @@ from app.repositories.task_repository import TaskRepository
 
 
 @pytest.fixture
-def db_manager() -> DatabaseManager:
+def db_manager() -> Iterator[DatabaseManager]:
     db = DatabaseManager(":memory:")
     db.initialize_database()
     try:

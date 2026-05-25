@@ -32,12 +32,17 @@ class DatabaseManager:
         获取数据库连接（使用单例模式复用连接）。
         """
         if self._connection is None:
-            self._connection = sqlite3.connect(self.db_path)
+            # check_same_thread=False 允许 QThread 中的 SyncManager 复用同一连接；
+            # 调用方需自行保证不会并发写（GUI 主线程与同步线程串行调用即可）
+            self._connection = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+            )
             self._connection.row_factory = sqlite3.Row
-            
+
             # 必须显式开启外键约束，这是 SQLite 的最佳实践
             self._connection.execute("PRAGMA foreign_keys = ON")
-            
+
         return self._connection
 
     def initialize_database(self) -> None:
