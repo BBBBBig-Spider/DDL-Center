@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
 from app.models.task import Task
@@ -45,6 +46,17 @@ class TaskManager:
     def _is_int(value: object) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)
 
+    @staticmethod
+    def _coerce_estimated_hours(value: object) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("estimated_hours must be a number (not bool/str)")
+        f = float(value)
+        if not math.isfinite(f):
+            raise ValueError("estimated_hours must be finite (no nan/inf)")
+        if f < 0:
+            raise ValueError("estimated_hours must be >= 0")
+        return f
+
     def _validate_data(self, data: dict, *, for_update: bool) -> None:
         if not isinstance(data, dict):
             raise TypeError("data must be a dict")
@@ -66,13 +78,18 @@ class TaskManager:
         self._validate_data(data, for_update=False)
         now = self._now()
 
+        if "estimated_hours" in data:
+            estimated_hours = self._coerce_estimated_hours(data["estimated_hours"])
+        else:
+            estimated_hours = 1.0
+
         task = Task(
             title=data["title"],
             due_time=data["due_time"],
             course_id=data.get("course_id"),
             related_exam_id=data.get("related_exam_id"),
             description=data.get("description", ""),
-            estimated_hours=float(data.get("estimated_hours", 1.0)),
+            estimated_hours=estimated_hours,
             status=data.get("status", "todo"),
             priority=data.get("priority", 2),
             source="manual",
@@ -98,6 +115,8 @@ class TaskManager:
             raise ValueError(f"task {task_id} not found")
 
         for field_name, value in data.items():
+            if field_name == "estimated_hours":
+                value = self._coerce_estimated_hours(value)
             setattr(task, field_name, value)
 
         task.user_modified = True
@@ -169,8 +188,12 @@ class TaskManager:
                 raise TypeError("due_after filter must be datetime")
             tasks = [t for t in tasks if t.due_time >= due_after]
 
-        if not filters.get("include_done", True):
-            tasks = [t for t in tasks if not t.is_done()]
+        if "include_done" in filters:
+            include_done = filters["include_done"]
+            if not isinstance(include_done, bool):
+                raise TypeError("include_done filter must be bool")
+            if not include_done:
+                tasks = [t for t in tasks if not t.is_done()]
 
         order_by = filters.get("order_by", "due_time")
         if order_by not in _VALID_ORDER_KEYS:

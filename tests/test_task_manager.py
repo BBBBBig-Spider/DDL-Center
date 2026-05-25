@@ -82,6 +82,34 @@ def test_create_task_accepts_optional_fields(manager: TaskManager) -> None:
     assert task.priority == 1
 
 
+@pytest.mark.parametrize(
+    "bad_value, exc",
+    [
+        (True, TypeError),
+        (False, TypeError),
+        ("inf", TypeError),
+        (float("inf"), ValueError),
+        (float("nan"), ValueError),
+        (-1.0, ValueError),
+    ],
+)
+def test_create_task_rejects_bad_estimated_hours(
+    manager: TaskManager, bad_value, exc
+) -> None:
+    with pytest.raises(exc):
+        manager.create_task(
+            {"title": "x", "due_time": _due(1), "estimated_hours": bad_value}
+        )
+
+
+def test_update_task_rejects_bad_estimated_hours(manager: TaskManager) -> None:
+    task_id = manager.create_task({"title": "x", "due_time": _due(1)})
+    with pytest.raises(TypeError):
+        manager.update_task(task_id, {"estimated_hours": True})
+    with pytest.raises(ValueError):
+        manager.update_task(task_id, {"estimated_hours": float("nan")})
+
+
 # ─── update_task ───────────────────────────────────────────────────
 
 def test_update_task_modifies_fields_and_flags_user_modified(manager: TaskManager) -> None:
@@ -156,6 +184,12 @@ def test_list_tasks_filter_include_done_false(manager: TaskManager) -> None:
 
     rows = manager.list_tasks({"include_done": False})
     assert [t.id for t in rows] == [b]
+
+
+@pytest.mark.parametrize("bad_value", ["false", "true", 0, 1, None])
+def test_list_tasks_include_done_must_be_bool(manager: TaskManager, bad_value) -> None:
+    with pytest.raises(TypeError, match="include_done"):
+        manager.list_tasks({"include_done": bad_value})
 
 
 def test_list_tasks_unknown_filter_raises(manager: TaskManager) -> None:
