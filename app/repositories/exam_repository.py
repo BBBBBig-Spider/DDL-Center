@@ -51,6 +51,9 @@ class ExamRepository:
         if not isinstance(exam.location, str):
             raise TypeError("exam.location must be str")
 
+        if not isinstance(exam.seat, str):
+            raise TypeError("exam.seat must be str")
+
         if not isinstance(exam.exam_type, str):
             raise TypeError("exam.exam_type must be str")
 
@@ -80,18 +83,21 @@ class ExamRepository:
             name=row["name"],
             start_time=datetime.fromisoformat(row["start_time"]),
             end_time=datetime.fromisoformat(row["end_time"]),
-            location=row["location"] or "",
+            location=row["location"],
+            seat=row["seat"],
             exam_type=row["exam_type"],
             source=row["source"],
             external_id=row["external_id"],
-            raw_payload=row["raw_payload"] or "",
+            raw_payload=row["raw_payload"],
         )
 
     # ─── 增 ────────────────────────────────────────────────────
 
     def add(self, exam: Exam) -> int:
-        """插入一条考试记录，返回新记录的 id。"""
+        """插入一条考试记录，返回新记录的 id，并把 id 回写到入参对象。"""
         self._validate_exam(exam)
+        if exam.id is not None:
+            raise ValueError("exam.id must be None for add(); use update() instead")
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -103,12 +109,13 @@ class ExamRepository:
                     start_time,
                     end_time,
                     location,
+                    seat,
                     exam_type,
                     source,
                     external_id,
                     raw_payload
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     exam.course_id,
@@ -116,6 +123,7 @@ class ExamRepository:
                     exam.start_time.isoformat(),
                     exam.end_time.isoformat(),
                     exam.location,
+                    exam.seat,
                     exam.exam_type,
                     exam.source,
                     exam.external_id,
@@ -123,6 +131,7 @@ class ExamRepository:
                 ),
             )
 
+        exam.id = cursor.lastrowid
         return cursor.lastrowid
 
     # ─── 查单个 ────────────────────────────────────────────────
@@ -197,6 +206,7 @@ class ExamRepository:
                     start_time = ?,
                     end_time = ?,
                     location = ?,
+                    seat = ?,
                     exam_type = ?,
                     source = ?,
                     external_id = ?,
@@ -209,6 +219,7 @@ class ExamRepository:
                     exam.start_time.isoformat(),
                     exam.end_time.isoformat(),
                     exam.location,
+                    exam.seat,
                     exam.exam_type,
                     exam.source,
                     exam.external_id,
@@ -241,7 +252,8 @@ class ExamRepository:
     # ─── 按 external_id 查 ────────────────────────────────────
 
     def find_by_external_id(self, external_id: str) -> Optional[Exam]:
-        """根据教学网考试 ID 查询，找不到返回 None。同步流程使用。"""
+        """根据教学网考试 ID 查询，找不到返回 None。同步流程使用。
+        只匹配 source='sync' 的记录，避免 manual 行误用 external_id 命中。"""
         if not isinstance(external_id, str) or not external_id:
             raise ValueError("external_id must be a non-empty str")
 
@@ -250,7 +262,7 @@ class ExamRepository:
             """
             SELECT *
             FROM exams
-            WHERE external_id = ?
+            WHERE external_id = ? AND source = 'sync'
             """,
             (external_id,),
         )

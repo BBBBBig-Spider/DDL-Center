@@ -87,7 +87,7 @@ class SyncRepository:
             external_id=row["external_id"],
             local_type=row["local_type"],
             local_id=row["local_id"],
-            raw_hash=row["raw_hash"] or "",
+            raw_hash=row["raw_hash"],
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
             status=row["status"],
         )
@@ -141,11 +141,30 @@ class SyncRepository:
 
         - 不存在 → INSERT 新行，返回 lastrowid
         - 已存在 → UPDATE 除 source_type/external_id 之外的字段，返回已存在的 id
+
+        注意：record.id 不参与定位，主键以 (source_type, external_id) 为准。
+        若调用方传入了 record.id 但与库里命中的 id 不一致，会抛 ValueError，
+        防止"以为按 id upsert"的误用。
         """
         self._validate_record(record)
 
         conn = self.db_manager.get_connection()
         with conn:
+            if record.id is not None:
+                cursor = conn.execute(
+                    """
+                    SELECT id FROM sync_records
+                    WHERE source_type = ? AND external_id = ?
+                    """,
+                    (record.source_type, record.external_id),
+                )
+                existing = cursor.fetchone()
+                if existing is not None and existing["id"] != record.id:
+                    raise ValueError(
+                        f"record.id={record.id} conflicts with existing id="
+                        f"{existing['id']} for ({record.source_type}, {record.external_id})"
+                    )
+
             conn.execute(
                 """
                 INSERT INTO sync_records (
@@ -176,7 +195,6 @@ class SyncRepository:
                 ),
             )
 
-            # 拿到该行的 id（不论新增还是更新都通过复合键再 SELECT 一次）
             cursor = conn.execute(
                 """
                 SELECT id FROM sync_records
@@ -186,6 +204,7 @@ class SyncRepository:
             )
             row = cursor.fetchone()
 
+        record.id = row["id"]
         return row["id"]
 
     # ─── 删 ────────────────────────────────────────────────────

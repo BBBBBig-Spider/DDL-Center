@@ -118,11 +118,11 @@ class ScheduleRepository:
             weekday=row["weekday"],
             start_time=time.fromisoformat(row["start_time"]),
             end_time=time.fromisoformat(row["end_time"]),
-            location=row["location"] or "",
+            location=row["location"],
             slot_type=row["slot_type"],
             start_week=row["start_week"],
             end_week=row["end_week"],
-            week_type=row["week_type"] or "all",
+            week_type=row["week_type"],
             source=row["source"],
             external_id=row["external_id"],
         )
@@ -130,8 +130,10 @@ class ScheduleRepository:
     # ─── 增 ────────────────────────────────────────────────────
 
     def add(self, slot: ScheduleSlot) -> int:
-        """插入一条课表时段，返回新记录的 id。"""
+        """插入一条课表时段，返回新记录的 id，并把 id 回写到入参对象。"""
         self._validate_slot(slot)
+        if slot.id is not None:
+            raise ValueError("slot.id must be None for add(); use update() instead")
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -169,6 +171,7 @@ class ScheduleRepository:
                 ),
             )
 
+        slot.id = cursor.lastrowid
         return cursor.lastrowid
 
     # ─── 查全部 ────────────────────────────────────────────────
@@ -204,22 +207,41 @@ class ScheduleRepository:
 
     # ─── 按 week 查 ───────────────────────────────────────────
 
-    def list_by_week(self, week: int) -> List[ScheduleSlot]:
-        """返回在指定周次出现的所有时段（处理 start_week/end_week 范围 + 单双周）。"""
+    def list_by_week(self, week: int, weekday: int | None = None) -> List[ScheduleSlot]:
+        """返回在指定周次出现的所有时段（处理 start_week/end_week 范围 + 单双周）。
+        传入 weekday 时进一步限定到某一天。"""
         self._validate_week(week)
+        if weekday is not None:
+            self._validate_weekday(weekday)
+
         parity = "odd" if week % 2 == 1 else "even"
         conn = self.db_manager.get_connection()
-        cursor = conn.execute(
-            """
-            SELECT *
-            FROM schedule_slots
-            WHERE start_week <= ?
-              AND end_week >= ?
-              AND (week_type = 'all' OR week_type = ?)
-            ORDER BY weekday ASC, start_time ASC
-            """,
-            (week, week, parity),
-        )
+
+        if weekday is None:
+            cursor = conn.execute(
+                """
+                SELECT *
+                FROM schedule_slots
+                WHERE start_week <= ?
+                  AND end_week >= ?
+                  AND (week_type = 'all' OR week_type = ?)
+                ORDER BY weekday ASC, start_time ASC
+                """,
+                (week, week, parity),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT *
+                FROM schedule_slots
+                WHERE start_week <= ?
+                  AND end_week >= ?
+                  AND (week_type = 'all' OR week_type = ?)
+                  AND weekday = ?
+                ORDER BY start_time ASC
+                """,
+                (week, week, parity, weekday),
+            )
         return [self._row_to_slot(row) for row in cursor.fetchall()]
 
     # ─── 改 ────────────────────────────────────────────────────
@@ -289,7 +311,8 @@ class ScheduleRepository:
     # ─── 按 external_id 查 ────────────────────────────────────
 
     def find_by_external_id(self, external_id: str) -> Optional[ScheduleSlot]:
-        """根据教学网时段 ID 查询，找不到返回 None。同步流程使用。"""
+        """根据教学网时段 ID 查询，找不到返回 None。同步流程使用。
+        只匹配 source='sync' 的记录，避免 manual 行误用 external_id 命中。"""
         if not isinstance(external_id, str) or not external_id:
             raise ValueError("external_id must be a non-empty str")
 
@@ -298,7 +321,7 @@ class ScheduleRepository:
             """
             SELECT *
             FROM schedule_slots
-            WHERE external_id = ?
+            WHERE external_id = ? AND source = 'sync'
             """,
             (external_id,),
         )
