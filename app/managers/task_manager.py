@@ -17,6 +17,7 @@ class TaskManager:
 
     VALID_ORDER_KEYS = {"due_time", "priority", "created_at", "updated_at"}
     VALID_STATUSES = {"todo", "doing", "done", "blocked"}
+    VALID_PRIORITIES = {1, 2, 3}
     VALID_FILTER_KEYS = {"status", "course_id", "due_before", "order_by"}
     UPDATABLE_FIELDS = {
         "title", "due_time", "course_id", "related_exam_id",
@@ -44,6 +45,54 @@ class TaskManager:
             raise ValueError("estimated_hours must be >= 0")
         return f
 
+    def _validate_field(self, field: str, value: object) -> object:
+        """对单个字段做类型/枚举/取值校验，返回（可能已强制转换的）值。"""
+        if field == "title":
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("title must be a non-empty str")
+            return value
+        if field == "due_time":
+            if not isinstance(value, datetime):
+                raise TypeError("due_time must be datetime")
+            return value
+        if field == "course_id":
+            if value is not None and not self._is_int(value):
+                raise TypeError("course_id must be int or None")
+            return value
+        if field == "related_exam_id":
+            if value is not None and not self._is_int(value):
+                raise TypeError("related_exam_id must be int or None")
+            return value
+        if field == "description":
+            if not isinstance(value, str):
+                raise TypeError("description must be str")
+            return value
+        if field == "estimated_hours":
+            return self._coerce_hours(value)
+        if field == "status":
+            if not isinstance(value, str):
+                raise TypeError("status must be str")
+            if value not in self.VALID_STATUSES:
+                raise ValueError(
+                    f"status must be one of: {', '.join(sorted(self.VALID_STATUSES))}"
+                )
+            return value
+        if field == "priority":
+            if not self._is_int(value):
+                raise TypeError("priority must be int")
+            if value not in self.VALID_PRIORITIES:
+                raise ValueError("priority must be 1, 2, or 3")
+            return value
+        if field == "external_id":
+            if value is not None and not isinstance(value, str):
+                raise TypeError("external_id must be str or None")
+            return value
+        if field == "raw_payload":
+            if not isinstance(value, str):
+                raise TypeError("raw_payload must be str")
+            return value
+        raise ValueError(f"unknown field: {field}")
+
     # ─── 增 ────────────────────────────────────────────────────
 
     def create_task(self, data: dict) -> int:
@@ -54,22 +103,28 @@ class TaskManager:
         if "due_time" not in data:
             raise ValueError("due_time is required")
 
+        unknown = set(data) - self.UPDATABLE_FIELDS
+        if unknown:
+            raise ValueError(f"unknown or read-only fields: {', '.join(sorted(unknown))}")
+
+        validated = {f: self._validate_field(f, v) for f, v in data.items()}
+
         now = datetime.now()
         task = Task(
-            title=data["title"],
-            due_time=data["due_time"],
-            course_id=data.get("course_id"),
-            related_exam_id=data.get("related_exam_id"),
-            description=data.get("description", ""),
-            estimated_hours=self._coerce_hours(data.get("estimated_hours", 1.0)),
-            status=data.get("status", "todo"),
-            priority=data.get("priority", 2),
+            title=validated["title"],
+            due_time=validated["due_time"],
+            course_id=validated.get("course_id"),
+            related_exam_id=validated.get("related_exam_id"),
+            description=validated.get("description", ""),
+            estimated_hours=validated.get("estimated_hours", 1.0),
+            status=validated.get("status", "todo"),
+            priority=validated.get("priority", 2),
             source="manual",
             user_modified=False,
-            external_id=data.get("external_id"),
+            external_id=validated.get("external_id"),
             created_at=now,
             updated_at=now,
-            raw_payload=data.get("raw_payload", ""),
+            raw_payload=validated.get("raw_payload", ""),
         )
 
         return self.task_repository.add(task)
@@ -145,15 +200,13 @@ class TaskManager:
         if unknown:
             raise ValueError(f"unknown or read-only fields: {', '.join(sorted(unknown))}")
 
+        validated = {f: self._validate_field(f, v) for f, v in data.items()}
+
         task = self.task_repository.get_by_id(task_id)
         if task is None:
             raise ValueError(f"task {task_id} not found")
 
-        if "estimated_hours" in data:
-            data = dict(data)
-            data["estimated_hours"] = self._coerce_hours(data["estimated_hours"])
-
-        for field, value in data.items():
+        for field, value in validated.items():
             setattr(task, field, value)
 
         task.user_modified = True
