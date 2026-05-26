@@ -54,11 +54,12 @@ CREATE TABLE IF NOT EXISTS exams (
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
     location TEXT NOT NULL DEFAULT '',
+    seat TEXT NOT NULL DEFAULT '',
     exam_type TEXT NOT NULL DEFAULT 'other',
     source TEXT NOT NULL DEFAULT 'manual',
     external_id TEXT,
     raw_payload TEXT NOT NULL DEFAULT '',
-    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -69,7 +70,8 @@ CREATE TABLE IF NOT EXISTS alerts (
     message TEXT NOT NULL,
     created_at TEXT NOT NULL,
     is_read INTEGER NOT NULL DEFAULT 0,
-    target_type TEXT NOT NULL DEFAULT 'task'
+    target_type TEXT NOT NULL DEFAULT 'task',
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS sync_records (
@@ -78,7 +80,7 @@ CREATE TABLE IF NOT EXISTS sync_records (
     external_id TEXT NOT NULL,
     local_type TEXT NOT NULL,
     local_id INTEGER NOT NULL,
-    raw_hash TEXT,
+    raw_hash TEXT NOT NULL DEFAULT '',
     last_seen_at TEXT NOT NULL,
     status TEXT NOT NULL,
     UNIQUE (source_type, external_id)
