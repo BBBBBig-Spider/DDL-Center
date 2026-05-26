@@ -106,12 +106,26 @@ class TestCourseRepository(unittest.TestCase):
     # ─── find_by_external_id ──────────────────────────────────
 
     def test_find_by_external_id(self) -> None:
-        """测试根据 external_id 查找课程（同步流程依赖此方法）。"""
-        self.repo.add(self.sample_course)
+        """测试根据 external_id 查找课程（同步流程依赖此方法，仅匹配 source='sync'）。"""
+        synced = Course(
+            name="编译原理",
+            teacher="张老师",
+            semester="2025-2026-1",
+            external_id="BB_CS101",
+            color="#4F81BD",
+            source="sync",
+            raw_payload="",
+        )
+        self.repo.add(synced)
 
         found = self.repo.find_by_external_id("BB_CS101")
         self.assertIsNotNone(found)
         self.assertEqual(found.name, "编译原理")
+
+    def test_find_by_external_id_ignores_manual(self) -> None:
+        """source='manual' 的行不应被同步流程命中，即使 external_id 一致。"""
+        self.repo.add(self.sample_course)
+        self.assertIsNone(self.repo.find_by_external_id("BB_CS101"))
 
     def test_find_by_external_id_not_found(self) -> None:
         """不存在的 external_id 应返回 None。"""

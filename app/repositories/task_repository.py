@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import List, Optional
 
@@ -50,6 +51,9 @@ class TaskRepository:
             task.estimated_hours, bool
         ):
             raise TypeError("task.estimated_hours must be a number")
+
+        if not math.isfinite(task.estimated_hours):
+            raise ValueError("task.estimated_hours must be finite")
 
         if task.estimated_hours < 0:
             raise ValueError("task.estimated_hours cannot be negative")
@@ -343,7 +347,8 @@ class TaskRepository:
         return [self._row_to_task(row) for row in rows]
 
     def find_by_external_id(self, external_id: str) -> Optional[Task]:
-        """根据教学网任务 ID 查询任务，找不到返回 None。同步流程使用。"""
+        """根据教学网任务 ID 查询任务，找不到返回 None。同步流程使用。
+        只匹配 source='sync' 的记录，避免 manual 行误用 external_id 命中。"""
         if not isinstance(external_id, str) or not external_id:
             raise ValueError("external_id must be a non-empty str")
 
@@ -353,7 +358,7 @@ class TaskRepository:
             """
             SELECT *
             FROM tasks
-            WHERE external_id = ?
+            WHERE external_id = ? AND source = 'sync'
             """,
             (external_id,),
         )
