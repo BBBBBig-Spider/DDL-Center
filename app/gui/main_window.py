@@ -61,7 +61,15 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    test_widget = MainWindow(facade=None)
+
+    try: 
+        from app.managers.app_facade import AppFacade
+        real_facade = AppFacade()
+        print("成功连接接口")
+    except Exception as e: 
+        real_facade = None
+        print("连了个寂寞")
+    test_widget = MainWindow(facade=real_facade)
     test_widget.setWindowTitle("DDL Center - 主界面调试")
     test_widget.resize(1000, 700)
     test_widget.show()

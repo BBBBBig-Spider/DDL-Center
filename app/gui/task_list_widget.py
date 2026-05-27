@@ -36,11 +36,11 @@ class TaskCardWidget(QFrame):
 
         layout = QHBoxLayout(self)
 
-        self.status_val = self._get_field("status", "to do")
+        self.status_val = self._get_field("status", "todo")
 
         # 状态复选框
         self.cb_status = QCheckBox()
-        self.status_val = self._get_field("status", "to do")
+        self.status_val = self._get_field("status", "todo")
         self.cb_status.setChecked(self.status_val == "done")
         layout.addWidget(self.cb_status)
 
@@ -185,17 +185,17 @@ class TaskCardWidget(QFrame):
         task_id = self._get_field("id", None)
         if task_id is not None and self.parent_widget.task_manager:
             try:
-                self.parent_widget.task_manager.update_task(task_id, {"status": "to do"})
+                self.parent_widget.task_manager.update_task(task_id, {"status": "todo"})
             except Exception as e:
                 QMessageBox.critical(self, "持久化错误", f"TaskManager 更新任务状态失败: {e}")
         else:
            if hasattr(self.parent_widget, "all_mock_tasks"):
                 for t in self.parent_widget.all_mock_tasks:
                     if t["id"] == task_id:
-                        t["status"] = "to do"
+                        t["status"] = "todo"
                         break
         
-        self.status_val = "to do"
+        self.status_val = "todo"
         self.parent_widget.refresh_display()
     
     def show_context_menu(self, pos):
@@ -255,7 +255,7 @@ class TaskListWidget(QWidget):
         self.task_manager = getattr(facade, "task_manager", facade)
         
         self.all_mock_tasks = [
-            {"id": 1, "title": "高等数学A课后作业", "course_id": 101, "description": "标准接口Mock测试", "due_time": datetime(2026, 5, 18, 18, 30), "estimated_hours": 2, "status": "to do", "priority": 1},
+            {"id": 1, "title": "高等数学A课后作业", "course_id": 101, "description": "标准接口Mock测试", "due_time": datetime(2026, 5, 18, 18, 30), "estimated_hours": 2, "status": "todo", "priority": 1},
             {"id": 2, "title": "程序设计实习大作业", "course_id": 202, "description": "完成魔兽大作业", "due_time": datetime(2026, 5, 20, 23, 59), "estimated_hours": 8, "status": "done", "priority": 2}
         ]
 
@@ -290,7 +290,7 @@ class TaskListWidget(QWidget):
 
         self.status_combo = QComboBox()
         self.status_combo.addItem("全部任务", None)
-        self.status_combo.addItem("未完成 (To Do)", "to do")
+        self.status_combo.addItem("未完成 (To Do)", "todo")
         self.status_combo.addItem("已完成 (Done)", "done")
         self.status_combo.setStyleSheet("""
             QComboBox { border: 1px solid #CCC; border-radius: 4px; padding: 4px 8px; min-width: 120px; }
@@ -374,20 +374,8 @@ class TaskListWidget(QWidget):
         tasks = []
         if self.task_manager and hasattr(self.task_manager, "list_tasks"):
             try:
-                if selected_status: 
-                    if hasattr(self.task_manager, "list_by_status"):
-                        tasks = self.task_manager.list_by_status(selected_status)
-                    else: 
-                        tasks = self.task_manager.list_tasks(filters={"status": selected_status})
-                else:
-                    tasks = self.task_manager.list_tasks() 
-                
-                if selected_status and tasks:
-                    first = tasks[0]
-                    if isinstance(first, dict):
-                        tasks = [t for t in tasks if str(t.get("status", "")).strip() == selected_status]
-                    else:
-                        tasks = [t for t in tasks if str(getattr(t, "status", "")).strip() == selected_status]
+                filters = {"status": selected_status} if selected_status else {}
+                tasks = self.task_manager.list_tasks(filters)
             except Exception as e:
                 print(f"[GUI Error] TaskManager.list_tasks 执行失败: {e}")
                 tasks = []
@@ -419,21 +407,7 @@ class TaskListWidget(QWidget):
             
             self.refresh_display()
         
-        tasks = []
-        if self.facade:
-            try:
-                tasks = self.facade.get_all_tasks()
-            except:
-                pass
         
-        if not tasks:
-            tasks = self.local_tasks
-
-        for task in tasks:
-            card = TaskCardWidget(task)
-            self.list_layout.addWidget(card)
-            
-        self.list_layout.addStretch()
 
     def on_view_changed(self, index): 
         self.stacked_views.setCurrentIndex(index)

@@ -94,20 +94,26 @@ class CourseBoardWidget(QWidget):
         self.scroll_area.setWidget(self.board_container)
         main_layout.addWidget(self.scroll_area)
     
-    def refresh_display(self, filters=None): 
+    def refresh_display(self, filters = None): 
         while self.board_layout.count():
             item = self.board_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+
+        courses = []
+        all_tasks = []
+
+        if self.facade and hasattr(self.facade, "list_courses"): 
+            try: 
+                courses = self.facade.list_courses()
+            except Exception as e: 
+                print (f"Error fetching courses: {e}")
         
         if self.task_manager: 
             try: 
-                courses = getattr(self.task_manager, "list_courses", lambda: [])()
-                all_tasks = getattr(self.task_manager, "list_tasks", lambda filters=None: [])()
+                all_tasks = getattr(self.task_manager, "list_tasks", lambda f=None: [])(filters)
             except Exception as e: 
                 print(f"Error fetching data from TaskManager: {e}")
-                courses = []
-                all_tasks = []
         
         else: 
             courses = [
@@ -121,15 +127,22 @@ class CourseBoardWidget(QWidget):
                 {"id": 3, "title": "期中模拟上机测验", "course_id": 202, "course_name": "程序设计实习", "description": "练习赛", "due_time": datetime(2026, 5, 28), "estimated_hours": 3, "status": "done", "priority": 3},
                 {"id": 4, "title": "大物实验报告：单摆", "course_id": 303, "course_name": "大学物理", "description": "记得画误差分析图", "due_time": datetime(2026, 5, 24), "estimated_hours": 1, "status": "to do", "priority": 2}
             ]
+            if filters and "status" in filters:
+                all_tasks = [t for t in all_tasks if t.get("status") == filters["status"]]
         
-        has_general_task = any(t.get("course_id") is None for t in all_tasks)
+        def get_val(obj, key): 
+            if isinstance(obj, dict): return obj.get(key)
+            return getattr(obj, key, None)
+        
+        has_general_task = any(get_val(t, "course_id") is None for t in all_tasks)
         if has_general_task:
+            courses = list(courses)
             courses.append({"id": None, "name": "📅 通用任务"})
 
         for course in courses: 
-            c_id = course.get("id")
-            c_name = course.get("name", "未知课程")
-            course_tasks = [t for t in all_tasks if t.get("course_id") == c_id]
+            c_id = get_val(course, "id")
+            c_name = get_val(course, "name") or "未知课程"
+            course_tasks = [t for t in all_tasks if get_val(t, "course_id") == c_id]
             column_widget = CourseColumnWidget(c_id, c_name, course_tasks, self.facade, self)
             self.board_layout.addWidget(column_widget)
 

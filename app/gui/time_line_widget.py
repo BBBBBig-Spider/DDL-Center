@@ -111,7 +111,7 @@ class TimelineWidget(QWidget):
         all_tasks = []
         if self.task_manager: 
             try: 
-                all_tasks = getattr(self.task_manager, "list_tasks", lambda: [])()
+                all_tasks = getattr(self.task_manager, "list_tasks", lambda f=None: [])(filters)
             except Exception as e: 
                 print(f"Error fetching tasks for timeline: {e}")
         
@@ -123,6 +123,10 @@ class TimelineWidget(QWidget):
                 {"id": 4, "title": "周日晚上截止的xigai论文", "course_name": "通用任务", "due_time": datetime(2026, 5, 24, 21, 0), "status": "to do", "priority": 3},
                 {"id": 5, "title": "English", "course_name": "null", "due_time": datetime(2026, 5, 28, 10, 0), "status": "to do", "priority": 2},
             ]
+            if filters and "status" in filters:
+                all_tasks = [t for t in all_tasks if t.get("status") == filters["status"]]
+        
+    
         
         now = datetime.now()
         today_date = now.date()

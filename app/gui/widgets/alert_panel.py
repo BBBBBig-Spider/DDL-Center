@@ -107,7 +107,15 @@ class AlertPanel(QWidget):
 
         if self.facade and hasattr(self.facade, "generate_alerts"): 
             try: 
-                alerts_data = self.facade.generate_alerts()
+                new_alerts = []
+                if hasattr(self.facade, "generate_alerts"): 
+                    new_alerts = self.facade.generate_alerts()
+                if hasattr(self.facade, "list_all_alerts"): 
+                    alerts_data = self.facade.list_all_alerts()
+                elif hasattr(self.facade, "alert_repository") and self.facade.alert_repository:
+                    alerts_data = self.facade.alert_repository.list_all()
+                else:
+                    alerts_data = new_alerts
             except Exception as e: 
                 print(f"[GUI Error] 提醒面板调用 Facade 失败: {e}")
         
@@ -121,7 +129,7 @@ class AlertPanel(QWidget):
             ]
         
         if not alerts_data: 
-            lbl_empty = QLabel("暂时没有明确的任务！")
+            lbl_empty = QLabel("暂时不能给你明确的答复！")
             lbl_empty.setStyleSheet("color: #BFBFBF; font-size: 12px; font-style: italic; margin-top: 20px;")
             lbl_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.list_layout.addWidget(lbl_empty)
