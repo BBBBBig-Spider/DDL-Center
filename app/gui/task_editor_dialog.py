@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QComboBox, 
@@ -67,16 +68,28 @@ class TaskEditorDialog(QDialog):
         main_layout.addWidget(self.button_box)
 
     def load_courses_from_backend(self): 
+        courses = []
+        if self.facade and hasattr(self.facade, "list_courses"):
+            try:
+                courses = self.facade.list_courses()
+            except NotImplementedError:
+                courses = []
+            except Exception as e:
+                print(f"Backend load courses failed: {e}")
+
+        if not courses and self.facade is None:
+            courses = [
+                {"id": 101, "name": "高等数学(A)"},
+                {"id": 202, "name": "程序设计实习"},
+                {"id": 303, "name": "大学物理(B)"}
+            ]
+
         self.course_combo.clear()
-        self.course_combo.addItem("通用任务", userData = None)
-        try: 
-            self.db_courses = self.facade.list_courses()
-            for course in self.db_courses: 
-                c_id = course.get("id") if isinstance(course, dict) else getattr(course, "id", None)
-                c_name = course.get("name") if isinstance(course, dict) else getattr(course, "name", "未知课程")
-                self.course_combo.addItem(c_name, c_id)
-        except Exception as e:
-            print(f"[GUI] 获取课程失败: {e}")
+        self.course_combo.addItem("=== 请选择关联课程 ===", None)
+        for c in courses:
+            c_id = c.get("id") if isinstance(c, dict) else getattr(c, "id", None)
+            c_name = c.get("name") if isinstance(c, dict) else getattr(c, "name", "未知课程")
+            self.course_combo.addItem(c_name, c_id)
     
     def _get_field(self, obj, key, default = " "):
         if isinstance(obj, dict):
@@ -93,6 +106,11 @@ class TaskEditorDialog(QDialog):
             self.course_combo.setCurrentIndex(index)
         
         dt = self._get_field(self.task_data, "due_time", None)
+        if isinstance(dt, str):
+            try:
+                dt = datetime.fromisoformat(dt)
+            except ValueError:
+                dt = None
         if dt:
             self.due_time_input.setDateTime(QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, 0))
         
