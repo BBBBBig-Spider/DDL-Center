@@ -1,3 +1,4 @@
+import os
 import sys
 
 from PySide6.QtWidgets import QApplication
@@ -85,8 +86,10 @@ def build_facade():
         facade.alert_repository = alert_repository
         return facade
     except Exception as exc:
-        print(f"Backend facade unavailable, using demo data: {exc}")
-        return DemoFacade()
+        if os.getenv("DDL_CENTER_ALLOW_DEMO_FALLBACK") == "1":
+            print(f"Backend facade unavailable, using demo data: {exc}")
+            return DemoFacade()
+        raise
 
 
 def main() -> None:

@@ -1,0 +1,5 @@
+Summarize this teaching-site DDL content in Chinese.
+Focus on deadlines, course names, and risks.
+Keep it concise.
+
+{raw_text}

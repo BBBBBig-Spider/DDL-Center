@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
 from bs4 import BeautifulSoup
@@ -298,9 +298,11 @@ class DDLParser:
             if not match:
                 continue
             parts = match.groupdict()
-            year = int(parts.get("year") or datetime.now().year)
+            has_explicit_year = bool(parts.get("year"))
+            now = datetime.now()
+            year = int(parts.get("year") or now.year)
             try:
-                return datetime(
+                due_time = datetime(
                     year,
                     int(parts["month"]),
                     int(parts["day"]),
@@ -309,6 +311,12 @@ class DDLParser:
                 )
             except (TypeError, ValueError):
                 return None
+            if not has_explicit_year and due_time < now - timedelta(days=30):
+                try:
+                    return due_time.replace(year=due_time.year + 1)
+                except ValueError:
+                    return due_time
+            return due_time
         return None
 
     @staticmethod

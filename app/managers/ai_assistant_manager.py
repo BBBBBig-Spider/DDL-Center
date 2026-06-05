@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from app.config import AI_DAILY_TOKEN_LIMIT
@@ -14,6 +15,10 @@ from app.network.network_errors import NetworkError
 
 class AIQuotaExceededError(RuntimeError):
     pass
+
+
+PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+SUMMARY_CACHE_TTL = timedelta(hours=1)
 
 
 class AIAssistantManager:
@@ -38,6 +43,7 @@ class AIAssistantManager:
         self._conversation_seq = 0
         self._conversations: dict[int, list[dict[str, str]]] = {}
         self._summary_cache: dict[str, tuple[datetime, str]] = {}
+        self._memory_token_usage: dict[str, int] = {}
 
     def decompose_task(self, description: str, due_time: datetime) -> list[dict]:
         if not isinstance(description, str) or not description.strip():
@@ -46,14 +52,23 @@ class AIAssistantManager:
             raise TypeError("due_time must be datetime")
 
         fallback = self._fallback_decomposition(description, due_time)
-        prompt = (
-            "Break this study task into 3-6 actionable subtasks. "
-            "Return strict JSON array. Each item must have title, estimated_hours, note.\n"
-            f"Task: {description}\nDue time: {due_time.isoformat()}\nToday: {date.today().isoformat()}"
+        prompt = self._format_prompt(
+            "task_decompose.txt",
+            (
+                "Break this study task into 3-6 actionable subtasks. "
+                "Return strict JSON array. Each item must have title, estimated_hours, note.\n"
+                "Task: {description}\nDue time: {due_time}\nToday: {today}"
+            ),
+            description=description,
+            due_time=due_time.isoformat(),
+            today=date.today().isoformat(),
         )
         reply = self._safe_chat(
             [
-                {"role": "system", "content": "You are a concise study planning assistant."},
+                {
+                    "role": "system",
+                    "content": "You are a concise study planning assistant. Return only valid JSON.",
+                },
                 {"role": "user", "content": prompt},
             ],
             fallback=json.dumps(fallback, ensure_ascii=False),
@@ -71,10 +86,16 @@ class AIAssistantManager:
             title = str(item.get("title", "")).strip()
             if not title:
                 continue
+            try:
+                estimated_hours = float(item.get("estimated_hours", 1) or 1)
+            except (TypeError, ValueError):
+                estimated_hours = 1.0
+            if estimated_hours <= 0:
+                estimated_hours = 1.0
             cleaned.append(
                 {
                     "title": title,
-                    "estimated_hours": float(item.get("estimated_hours", 1) or 1),
+                    "estimated_hours": estimated_hours,
                     "note": str(item.get("note", "")).strip(),
                 }
             )
@@ -96,7 +117,13 @@ class AIAssistantManager:
         history = self._conversations.setdefault(conversation_id, [])
         context = self._task_context(context_task_id)
         messages = [
-            {"role": "system", "content": "You help students plan deadlines and study work."},
+            {
+                "role": "system",
+                "content": self._load_prompt(
+                    "chat_assistant.txt",
+                    "You help students plan deadlines and study work. Keep replies concise and actionable.",
+                ),
+            },
         ]
         if context:
             messages.append({"role": "system", "content": context})
@@ -123,10 +150,15 @@ class AIAssistantManager:
             for task in sorted(open_tasks, key=lambda task: task.due_time)[:8]
         )
         completion = getattr(stats, "completion_rate", 0.0)
-        prompt = (
-            "Write a short daily study briefing in Chinese. "
-            "Mention urgent deadlines and workload. Keep it under 120 Chinese characters.\n"
-            f"Completion rate: {completion:.0%}\nTasks:\n{task_lines}"
+        prompt = self._format_prompt(
+            "daily_briefing.txt",
+            (
+                "Write a short daily study briefing in Chinese. "
+                "Mention urgent deadlines and workload. Keep it under 120 Chinese characters.\n"
+                "Completion rate: {completion}\nTasks:\n{task_lines}"
+            ),
+            completion=f"{completion:.0%}",
+            task_lines=task_lines,
         )
         return self._safe_chat(
             [
@@ -143,13 +175,20 @@ class AIAssistantManager:
             return ""
         cache_key = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
         cached = self._summary_cache.get(cache_key)
-        if cached is not None:
+        now = datetime.now()
+        if cached is not None and now - cached[0] < SUMMARY_CACHE_TTL:
             return cached[1]
+        if cached is not None:
+            self._summary_cache.pop(cache_key, None)
 
-        prompt = (
-            "Summarize this teaching-site DDL content in Chinese. "
-            "Focus on deadlines, course names, and risks. Keep it concise.\n"
-            f"{raw_text[:6000]}"
+        prompt = self._format_prompt(
+            "ddl_summarize.txt",
+            (
+                "Summarize this teaching-site DDL content in Chinese. "
+                "Focus on deadlines, course names, and risks. Keep it concise.\n"
+                "{raw_text}"
+            ),
+            raw_text=raw_text[:6000],
         )
         summary = self._safe_chat(
             [
@@ -158,7 +197,7 @@ class AIAssistantManager:
             ],
             fallback=raw_text[:300],
         )
-        self._summary_cache[cache_key] = (datetime.now(), summary)
+        self._summary_cache[cache_key] = (now, summary)
         return summary
 
     def set_api_key(self, key: str) -> None:
@@ -181,7 +220,7 @@ class AIAssistantManager:
     def today_token_usage(self) -> int:
         key = self.TOKEN_PREFIX + date.today().isoformat()
         if self.setting_repository is None:
-            return 0
+            return self._memory_token_usage.get(key, 0)
         raw = self.setting_repository.get(key, "0")
         try:
             return int(raw or "0")
@@ -192,21 +231,49 @@ class AIAssistantManager:
         key = self.key_store.get_key()
         if not key:
             return fallback
-        if self.today_token_usage() >= AI_DAILY_TOKEN_LIMIT:
-            return fallback
         try:
+            self._check_quota_or_raise(messages)
             client = self.llm_client_factory(key)
             reply, tokens = client.chat(messages)
             self._add_tokens(tokens)
             return reply.strip() or fallback
-        except (NetworkError, RuntimeError, ValueError, TypeError):
+        except (AIQuotaExceededError, NetworkError, RuntimeError, ValueError, TypeError):
             return fallback
 
     def _add_tokens(self, count: int) -> None:
-        if self.setting_repository is None:
-            return
+        count = max(0, int(count or 0))
         key = self.TOKEN_PREFIX + date.today().isoformat()
-        self.setting_repository.set(key, str(self.today_token_usage() + max(0, count)))
+        if self.setting_repository is None:
+            self._memory_token_usage[key] = self.today_token_usage() + count
+            return
+        self.setting_repository.set(key, str(self.today_token_usage() + count))
+
+    def _check_quota_or_raise(self, messages: list[dict]) -> None:
+        estimated_tokens = self._estimate_input_tokens(messages)
+        if self.today_token_usage() + estimated_tokens > AI_DAILY_TOKEN_LIMIT:
+            raise AIQuotaExceededError("daily AI token limit exceeded")
+
+    @staticmethod
+    def _estimate_input_tokens(messages: list[dict]) -> int:
+        text = "\n".join(str(message.get("content", "")) for message in messages if isinstance(message, dict))
+        return max(1, len(text) // 4)
+
+    @staticmethod
+    def _load_prompt(filename: str, fallback: str) -> str:
+        path = PROMPT_DIR / filename
+        try:
+            prompt = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return fallback
+        return prompt or fallback
+
+    @classmethod
+    def _format_prompt(cls, filename: str, fallback: str, **kwargs) -> str:
+        template = cls._load_prompt(filename, fallback)
+        try:
+            return template.format(**kwargs)
+        except (KeyError, ValueError):
+            return fallback.format(**kwargs)
 
     def _task_context(self, task_id: int | None) -> str:
         if task_id is None or self.task_manager is None:

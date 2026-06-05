@@ -1,0 +1,7 @@
+Write a short daily study briefing in Chinese.
+Mention urgent deadlines and workload.
+Keep it under 120 Chinese characters.
+
+Completion rate: {completion}
+Tasks:
+{task_lines}

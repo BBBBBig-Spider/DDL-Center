@@ -260,8 +260,58 @@ class SyncManager:
 
     @staticmethod
     def _hash_object(obj) -> str:
-        raw = json.dumps(obj, default=str, sort_keys=True, ensure_ascii=False)
+        raw = json.dumps(
+            SyncManager._stable_sync_payload(obj),
+            default=str,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _stable_sync_payload(obj) -> dict[str, Any]:
+        if isinstance(obj, Task):
+            return {
+                "type": "task",
+                "title": obj.title,
+                "due_time": obj.due_time.isoformat(),
+                "description": obj.description,
+                "estimated_hours": obj.estimated_hours,
+                "priority": obj.priority,
+                "source": obj.source,
+                "external_id": obj.external_id,
+                "raw_payload": obj.raw_payload,
+            }
+        if isinstance(obj, ScheduleSlot):
+            return {
+                "type": "schedule_slot",
+                "title": obj.title,
+                "weekday": obj.weekday,
+                "start_time": obj.start_time.isoformat(),
+                "end_time": obj.end_time.isoformat(),
+                "location": obj.location,
+                "slot_type": obj.slot_type,
+                "start_week": obj.start_week,
+                "end_week": obj.end_week,
+                "week_type": obj.week_type,
+                "source": obj.source,
+                "external_id": obj.external_id,
+                "raw_payload": getattr(obj, "raw_payload", ""),
+            }
+        if isinstance(obj, Exam):
+            return {
+                "type": "exam",
+                "name": obj.name,
+                "start_time": obj.start_time.isoformat(),
+                "end_time": obj.end_time.isoformat(),
+                "location": obj.location,
+                "seat": obj.seat,
+                "exam_type": obj.exam_type,
+                "source": obj.source,
+                "external_id": obj.external_id,
+                "raw_payload": obj.raw_payload,
+            }
+        return {"type": type(obj).__name__, "value": obj}
 
     @staticmethod
     def _coerce_str(value: Any) -> str:
