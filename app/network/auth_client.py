@@ -14,10 +14,10 @@ import base64
 import random
 import time
 from dataclasses import dataclass, field
+from urllib.parse import urlparse, urlunparse
 
 import requests
-from Crypto.Cipher import PKCS1_v1_5
-from Crypto.PublicKey import RSA
+from urllib3.exceptions import InsecureRequestWarning
 
 from app.config import (
     BB_APPID,
@@ -26,6 +26,8 @@ from app.config import (
     IAAA_PUBKEY_URL,
 )
 from app.network.network_errors import AuthError, ConnectionError, ParseError
+
+requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 
 @dataclass
@@ -58,6 +60,14 @@ def _fetch_rsa_public_key(session: requests.Session) -> str:
 
 def _rsa_encrypt(public_key_pem: str, plaintext: str) -> str:
     """Encrypt plaintext with the given RSA public key (PKCS#1 v1.5)."""
+    try:
+        from Crypto.Cipher import PKCS1_v1_5
+        from Crypto.PublicKey import RSA
+    except ImportError as exc:
+        raise ConnectionError(
+            "pycryptodome is required for IAAA RSA encryption"
+        ) from exc
+
     key = RSA.import_key(public_key_pem)
     cipher = PKCS1_v1_5.new(key)
     encrypted_bytes = cipher.encrypt(plaintext.encode("utf-8"))
@@ -108,12 +118,19 @@ def _campus_login(
 ) -> None:
     """Visit the app-specific campusLogin URL to set session cookies."""
     rand = f"{random.random():.16f}"
-    url = f"{redir_url}?_rand={rand}&token={token}"
+    url = f"{_https_url(redir_url)}?_rand={rand}&token={token}"
     try:
-        resp = session.get(url, timeout=10, allow_redirects=True)
+        resp = session.get(url, timeout=10, allow_redirects=True, verify=False)
         resp.raise_for_status()
     except requests.RequestException as exc:
         raise ConnectionError(f"Campus login redirect failed: {exc}") from exc
+
+
+def _https_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme == "http":
+        parsed = parsed._replace(scheme="https")
+    return urlunparse(parsed)
 
 
 class AuthClient:
@@ -125,6 +142,8 @@ class AuthClient:
         redir_url: str = BB_REDIR_URL,
     ) -> None:
         self._appid = appid
+        # IAAA validates redirUrl against the registered HTTP value. Convert to
+        # HTTPS only when visiting Blackboard in _campus_login.
         self._redir_url = redir_url
         self._session: requests.Session | None = None
         self._auth_session: AuthSession | None = None

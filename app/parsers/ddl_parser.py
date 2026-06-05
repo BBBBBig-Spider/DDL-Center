@@ -22,6 +22,8 @@ against the real DOM.
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 from datetime import datetime
 from typing import Any, List, Optional
 
@@ -155,6 +157,13 @@ class DDLParser:
             task = self._build_task_from_html(item)
             if task is not None:
                 tasks.append(task)
+        if tasks:
+            return tasks
+
+        for item in soup.select("li.liItem, div.liItem"):
+            task = self._build_task_from_blackboard_item(item, soup)
+            if task is not None:
+                tasks.append(task)
         return tasks
 
     def _build_task_from_html(self, item: Tag) -> Optional[Task]:
@@ -174,12 +183,56 @@ class DDLParser:
         kind = self._extract_text(item, ".kind, .type")
 
         description = self._format_description(kind, course_name)
-        raw_payload = str(item)
+        raw_payload = json.dumps(
+            {
+                "course_external_id": course_external_id,
+                "course_name": course_name,
+                "kind": kind,
+                "raw": str(item),
+            },
+            ensure_ascii=False,
+        )
 
         return Task(
             title=title,
             due_time=due_time,
             description=description,
+            source="sync",
+            external_id=external_id,
+            raw_payload=raw_payload,
+        )
+
+    def _build_task_from_blackboard_item(
+        self,
+        item: Tag,
+        soup: BeautifulSoup,
+    ) -> Optional[Task]:
+        title = self._extract_text(
+            item,
+            "h3, h4, .item h3, .item h4, .itemTitle, .vtbegenerated h3, a",
+        )
+        text = item.get_text(" ", strip=True)
+        if not title:
+            return None
+
+        due_time = self._parse_blackboard_due_time(text)
+        if due_time is None:
+            return None
+
+        course_name = self._course_name_from_title(soup)
+        external_id = self._blackboard_external_id(item, title, due_time)
+        raw_payload = json.dumps(
+            {
+                "course_name": course_name,
+                "kind": "assignment",
+                "raw": str(item),
+            },
+            ensure_ascii=False,
+        )
+        return Task(
+            title=title,
+            due_time=due_time,
+            description=self._format_description("assignment", course_name),
             source="sync",
             external_id=external_id,
             raw_payload=raw_payload,
@@ -232,3 +285,52 @@ class DDLParser:
             except ValueError:
                 continue
         return None
+
+    def _parse_blackboard_due_time(self, text: str) -> Optional[datetime]:
+        compact = re.sub(r"\s+", "", text)
+        patterns = (
+            r"(?:提交)?截止(?:时间)?[:：]?(?:北京时间)?(?P<month>\d{1,2})月(?P<day>\d{1,2})日(?P<hour>\d{1,2})[:：](?P<minute>\d{2})",
+            r"(?:提交)?截止(?:时间)?[:：]?(?:北京时间)?(?P<year>\d{4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日(?P<hour>\d{1,2})[:：](?P<minute>\d{2})",
+            r"(?:提交)?截止(?:时间)?[:：]?(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})[T ]?(?P<hour>\d{1,2})[:：](?P<minute>\d{2})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, compact, flags=re.IGNORECASE)
+            if not match:
+                continue
+            parts = match.groupdict()
+            year = int(parts.get("year") or datetime.now().year)
+            try:
+                return datetime(
+                    year,
+                    int(parts["month"]),
+                    int(parts["day"]),
+                    int(parts["hour"]),
+                    int(parts["minute"]),
+                )
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    @staticmethod
+    def _course_name_from_title(soup: BeautifulSoup) -> str:
+        title = soup.title.get_text(strip=True) if soup.title else ""
+        if "–" in title:
+            return title.split("–", 1)[1].strip()
+        if "-" in title:
+            return title.split("-", 1)[1].strip()
+        return ""
+
+    @staticmethod
+    def _blackboard_external_id(item: Tag, title: str, due_time: datetime) -> str:
+        candidates = [
+            item.get("id"),
+            item.get("data-content-id"),
+            item.get("data-external-id"),
+        ]
+        for node in item.find_all(True):
+            candidates.extend([node.get("id"), node.get("href"), node.get("name")])
+        for value in candidates:
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:180]
+        digest = hashlib.sha256(f"{title}|{due_time.isoformat()}".encode("utf-8")).hexdigest()
+        return f"blackboard-{digest[:16]}"
