@@ -149,30 +149,24 @@ class TaskCardWidget(QFrame):
 
     def on_confirm_done(self):
         task_id = self._get_field("id", None)
-        if task_id is not None and self.parent_widget.task_manager:
+        if task_id is not None and self.parent_widget.facade:
             try:
-                self.parent_widget.task_manager.mark_done(task_id)
+                self.parent_widget.facade.mark_task_done(task_id)
+                self.parent_widget.refresh_display()
+                return
             except Exception as e:
-                QMessageBox.critical(self, "持久化错误", f"TaskManager 标记完成失败: {e}")
-        else:
-           if hasattr(self.parent_widget, "all_mock_tasks"):
-                for t in self.parent_widget.all_mock_tasks:
-                    if t["id"] == task_id:
-                        t["status"] = "done"
+                QMessageBox.critical(self, "后端错误", f"标记完成失败: {e}")
 
-                        break
-        
-        self.status_val = "done"
-        self.confirm_widget.hide()
-        self.time_widget.show()
-        
+        if hasattr(self.parent_widget, "all_mock_tasks"):
+            for t in self.parent_widget.all_mock_tasks:
+                if t["id"] == task_id: t["status"] = "done"
         self.parent_widget.refresh_display()
 
     def on_confirm_delete(self): 
         task_id = self._get_field("id", None)
-        if task_id is not None and self.parent_widget.task_manager:
+        if task_id is not None and self.parent_widget.facade:
             try:
-                self.parent_widget.task_manager.delete_task(task_id)
+                self.parent_widget.facade.delete_task(task_id)
             except Exception as e:
                 QMessageBox.critical(self, "持久化错误", f"TaskManager 删除任务失败: {e}")
         else:
@@ -183,9 +177,9 @@ class TaskCardWidget(QFrame):
 
     def on_confirm_todo(self): 
         task_id = self._get_field("id", None)
-        if task_id is not None and self.parent_widget.task_manager:
+        if task_id is not None and self.parent_widget.facade:
             try:
-                self.parent_widget.task_manager.update_task(task_id, {"status": "todo"})
+                self.parent_widget.facade.update_task(task_id, {"status": "todo"})
             except Exception as e:
                 QMessageBox.critical(self, "持久化错误", f"TaskManager 更新任务状态失败: {e}")
         else:
@@ -217,9 +211,9 @@ class TaskCardWidget(QFrame):
             new_payload = dialog.get_task_data()
             task_id = self._get_field("id", None)
 
-            if task_id is not None and self.parent_widget.task_manager:
+            if task_id is not None and self.parent_widget.facade:
                 try:
-                    self.parent_widget.task_manager.update_task(task_id, new_payload)
+                    self.parent_widget.facade.update_task(task_id, new_payload)
                 except Exception as e:
                     QMessageBox.critical(self, "持久化错误", f"TaskManager 更新任务失败: {e}")
             
@@ -236,13 +230,18 @@ class TaskCardWidget(QFrame):
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             task_id = self._get_field("id", None)
-            if task_id is not None and self.parent_widget.task_manager:
+            if task_id is not None and self.parent_widget.facade:
                 try:
-                    self.parent_widget.task_manager.delete_task(task_id)
+                    self.parent_widget.facade.delete_task(task_id)
                 except Exception as e:
-                    QMessageBox.critical(self, "持久化错误", f"TaskManager 删除任务失败: {e}")
+                    QMessageBox.critical(self, "持久化错误", f"Facade 删除任务失败: {e}")
             else:
                 print(f"[GUI Mock Mode] 模拟删除任务ID {task_id}")
+                if hasattr(self.parent_widget, "all_mock_tasks"):
+                    self.parent_widget.all_mock_tasks = [
+                        t for t in self.parent_widget.all_mock_tasks
+                        if t["id"] != task_id
+                    ]
             
             self.parent_widget.refresh_display()
 
@@ -296,7 +295,7 @@ class TaskListWidget(QWidget):
             QComboBox { border: 1px solid #CCC; border-radius: 4px; padding: 4px 8px; min-width: 120px; }
         """)
         
-        self.status_combo.currentIndexChanged.connect(self.refresh_display)
+        self.status_combo.currentIndexChanged.connect(self.refresh_current_view)
         self.top_layout.addWidget(self.status_combo)
 
         self.top_layout.addStretch()
@@ -353,59 +352,80 @@ class TaskListWidget(QWidget):
 
 
     def refresh_display(self):
-        current_view = self.stacked_views.currentWidget() if hasattr(self, 'stacked_views') else None
-        if current_view and current_view != self.scroll_area:
-            selected_status = self.status_combo.currentData()
-            filters = {"status": selected_status}  if selected_status else {}
-
-            if hasattr(current_view, "refresh_display"): 
-                current_view.refresh_display(filters)
-            if hasattr(self, "right_alert_panel"): 
-                self.right_alert_panel.refresh_display()
-            return
-        
         while self.list_layout.count():
             item = self.list_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        
-        selected_status = self.status_combo.currentData()
 
         tasks = []
-        if self.task_manager and hasattr(self.task_manager, "list_tasks"):
+        selected_status = self.status_combo.currentData() 
+        filters = {"status": selected_status} if selected_status else {}
+
+        use_mock_data = self.facade is None
+        if self.facade:
             try:
-                filters = {"status": selected_status} if selected_status else {}
-                tasks = self.task_manager.list_tasks(filters)
+                tasks = self.facade.list_tasks(filters)
             except Exception as e:
-                print(f"[GUI Error] TaskManager.list_tasks 执行失败: {e}")
-                tasks = []
-        else:
+                print(f"[GUI Connect Alert] 调用真实 Facade.list_tasks 失败: {e}，将自动切换为高仿测试")
+                use_mock_data = True
+
+        if use_mock_data:
             if selected_status:
-                tasks = [t for t in self.all_mock_tasks if t["status"] == selected_status]
+                tasks = [t for t in self.all_mock_tasks if t.get("status") == selected_status]
             else:
                 tasks = self.all_mock_tasks
 
+        if not tasks:
+            empty_label = QLabel("No tasks")
+            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_label.setStyleSheet("color: #999; font-size: 13px; padding: 24px;")
+            self.list_layout.addWidget(empty_label)
+            self.list_layout.addStretch()
+            if hasattr(self, "right_alert_panel"):
+                self.right_alert_panel.refresh_display()
+            return
 
         for task in tasks:
             card = TaskCardWidget(task, self)
             self.list_layout.addWidget(card)
-            
+
         self.list_layout.addStretch()
+        if hasattr(self, "right_alert_panel"):
+            self.right_alert_panel.refresh_display()
+
+    def current_filters(self):
+        selected_status = self.status_combo.currentData()
+        return {"status": selected_status} if selected_status else {}
+
+    def refresh_current_view(self):
+        active_widget = self.stacked_views.currentWidget()
+        if active_widget == self.scroll_area:
+            self.refresh_display()
+        elif active_widget and hasattr(active_widget, "refresh_display"):
+            active_widget.refresh_display(self.current_filters())
+            if hasattr(self, "right_alert_panel"):
+                self.right_alert_panel.refresh_display()
     
     def show_add_task_dialog(self): 
         dialog = TaskEditorDialog(self, facade=self.facade)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            payload = dialog.get_task_data()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
 
-            if self.task_manager and hasattr(self.task_manager, "create_task"):
-                try:
-                    self.task_manager.create_task(payload) 
-                except Exception as e:
-                    QMessageBox.critical(self, "持久化错误", f"TaskManager 创建任务失败: {e}")
-            else:
-                print(f"[GUI Mock Mode] 捕获弹窗数据: {payload}")
-            
-            self.refresh_display()
+        payload = dialog.get_task_data()
+
+        if self.facade:
+            try:
+                self.facade.create_task(payload) 
+            except Exception as e:
+                QMessageBox.critical(self, "Backend error", f"Failed to create task: {e}")
+                return
+        else:
+            next_id = max((t.get("id", 0) for t in self.all_mock_tasks), default=0) + 1
+            payload["id"] = next_id
+            payload.setdefault("status", "todo")
+            self.all_mock_tasks.append(payload)
+
+        self.refresh_current_view()
         
         
 
@@ -416,7 +436,7 @@ class TaskListWidget(QWidget):
         if index == 0: 
             self.refresh_display()
         elif active_widget and hasattr(active_widget, "refresh_display"): 
-            active_widget.refresh_display()
+            active_widget.refresh_display(self.current_filters())
         
 
 if __name__ == "__main__":
