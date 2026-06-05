@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!--
+  data/mock_schedule.html — 教学网/门户课表页面的本地样例数据。
+
+  用途（架构规划 Part 5.1 教学网保底）：
+  真实门户课表抓取失败时，SyncManager 读取本文件交给 ScheduleParser.parse()
+  产出 ScheduleSlot 列表，保证课表同步与演示不中断。
+
+  结构契约（建议 ScheduleParser 的 HTML 分支按此选择器解析，
+  对应 app/models/schedule_slot.py 的 ScheduleSlot 字段）：
+    - 每个时段是一个 .schedule-item 容器
+    - data-external-id   →  ScheduleSlot.external_id
+    - .course            →  课程名（标题来源）
+    - .course-external-id→  课程外部 ID（供 SyncManager 解析课程归属）
+    - .weekday           →  星期几 1-7（1=周一 ... 7=周日）
+    - .start-time        →  开始时间 HH:MM
+    - .end-time          →  结束时间 HH:MM
+    - .location          →  地点
+    - .slot-type         →  lecture / lab / tutorial / custom / free
+    - .start-week        →  起始周
+    - .end-week          →  结束周（含）
+    - .week-type         →  all / odd / even（单双周）
+
+  注意：占位样例。真实门户课表 DOM 抓到后以真实结构覆盖，并复核 ScheduleParser。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>我的课表 - 门户（样例数据）</title>
+</head>
+<body>
+  <h1>2025-2026 春季学期课表</h1>
+  <table class="schedule-table">
+    <tbody>
+
+      <tr class="schedule-item" data-external-id="bb_slot_2001">
+        <td class="course">编译原理</td>
+        <td class="course-external-id">CS-COMP-101</td>
+        <td class="weekday">1</td>
+        <td class="start-time">08:00</td>
+        <td class="end-time">09:50</td>
+        <td class="location">理教 207</td>
+        <td class="slot-type">lecture</td>
+        <td class="start-week">1</td>
+        <td class="end-week">16</td>
+        <td class="week-type">all</td>
+      </tr>
+
+      <tr class="schedule-item" data-external-id="bb_slot_2002">
+        <td class="course">编译原理（习题课）</td>
+        <td class="course-external-id">CS-COMP-101</td>
+        <td class="weekday">3</td>
+        <td class="start-time">15:10</td>
+        <td class="end-time">16:00</td>
+        <td class="location">理教 207</td>
+        <td class="slot-type">tutorial</td>
+        <td class="start-week">2</td>
+        <td class="end-week">16</td>
+        <td class="week-type">odd</td>
+      </tr>
+
+      <tr class="schedule-item" data-external-id="bb_slot_2003">
+        <td class="course">操作系统</td>
+        <td class="course-external-id">CS-OS-201</td>
+        <td class="weekday">2</td>
+        <td class="start-time">10:10</td>
+        <td class="end-time">12:00</td>
+        <td class="location">二教 301</td>
+        <td class="slot-type">lecture</td>
+        <td class="start-week">1</td>
+        <td class="end-week">16</td>
+        <td class="week-type">all</td>
+      </tr>
+
+      <tr class="schedule-item" data-external-id="bb_slot_2004">
+        <td class="course">操作系统（上机）</td>
+        <td class="course-external-id">CS-OS-201</td>
+        <td class="weekday">4</td>
+        <td class="start-time">14:00</td>
+        <td class="end-time">15:50</td>
+        <td class="location">理科 1 号楼机房</td>
+        <td class="slot-type">lab</td>
+        <td class="start-week">3</td>
+        <td class="end-week">15</td>
+        <td class="week-type">even</td>
+      </tr>
+
+      <tr class="schedule-item" data-external-id="bb_slot_2005">
+        <td class="course">高等数学（B）</td>
+        <td class="course-external-id">MATH-CALC-105</td>
+        <td class="weekday">5</td>
+        <td class="start-time">08:00</td>
+        <td class="end-time">09:50</td>
+        <td class="location">一教 105</td>
+        <td class="slot-type">lecture</td>
+        <td class="start-week">1</td>
+        <td class="end-week">16</td>
+        <td class="week-type">all</td>
+      </tr>
+
+    </tbody>
+  </table>
+</body>
+</html>
