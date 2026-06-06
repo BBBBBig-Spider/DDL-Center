@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(button)
 
         layout.addStretch()
-        status = QLabel("演示版 UI")
+        status = QLabel("真实接口模式")
         status.setStyleSheet("color: #F3D9D9; font-size: 12px;")
         layout.addWidget(status)
         return sidebar
@@ -233,9 +233,9 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
-    from app.gui.demo_facade import DemoFacade
+    from app.main import build_facade
 
     app = QApplication(sys.argv)
-    window = MainWindow(DemoFacade())
+    window = MainWindow(build_facade())
     window.show()
     sys.exit(app.exec())

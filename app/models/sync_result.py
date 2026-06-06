@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 
 @dataclass
 class SyncResult:
-    used_mock: bool = False
     source: str = "network"
     tasks_new: int = 0
     tasks_updated: int = 0

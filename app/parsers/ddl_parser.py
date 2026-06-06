@@ -7,7 +7,7 @@ Signature follows the architecture doc:
 
 Accepts:
 - HTML strings (real Blackboard pages, once a real sample is captured).
-- JSON strings (used by mock data / tests / future structured endpoints).
+- JSON strings (used by tests / future structured endpoints).
 
 The parser does **not** touch the database. Course resolution
 (course_external_id → course_id) is the responsibility of SyncManager,
@@ -15,7 +15,7 @@ which calls CourseRepository.find_by_external_id on the parsed result.
 
 The HTML branch uses assumed CSS selectors (.deadline-item, .title,
 .due-time, .course, .course-external-id, .kind, data-external-id).
-These selectors are a placeholder — once `data/mock_ddl.html` is captured
+These selectors are a placeholder — once a real teaching-site sample is captured
 by `scripts/probe_teaching_site.py`, the selectors should be reviewed
 against the real DOM.
 """

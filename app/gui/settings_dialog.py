@@ -98,7 +98,7 @@ class SettingsDialog(QDialog):
             try:
                 self.facade.set_deepseek_api_key(key)
             except NotImplementedError:
-                QMessageBox.information(self, "保存提示", "后端暂未实现保存接口，演示中仅保留本次输入。")
+                QMessageBox.information(self, "保存提示", "后端暂未实现 API Key 保存接口。")
             except Exception as exc:
                 QMessageBox.critical(self, "保存失败", str(exc))
                 return

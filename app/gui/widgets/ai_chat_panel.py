@@ -7,14 +7,14 @@ from app.gui.theme import BORDER, INK, PKU_RED, primary_button_style
 
 
 class AIChatPanel(QWidget):
-    """Embedded AI chat panel for the AI page."""
+    """Embedded AI chat panel backed by AppFacade.ai_chat."""
 
     def __init__(self, facade=None, parent=None):
         super().__init__(parent)
         self.facade = facade
         self.conversation_id: int | None = None
         self._init_ui()
-        self._append_assistant("你好，我是 DDL 指挥中心的 AI 助手。你可以直接在这里询问任务拆解、学习安排或课程问题。")
+        self._append_assistant("你好，我是 DDL 指挥中心的 AI 助手。你可以直接询问任务拆解、学习安排或课程问题。")
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -38,7 +38,7 @@ class AIChatPanel(QWidget):
         header_layout.setContentsMargins(14, 12, 14, 12)
         title = QLabel("AI 学习助手")
         title.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {INK};")
-        subtitle = QLabel("当前演示模式会返回本地 mock 回复；真实 AI 接入后仍复用这里的对话界面。")
+        subtitle = QLabel("当前页面调用真实 AI 接口；请先在 AI 设置中配置 DeepSeek API Key。")
         subtitle.setStyleSheet("font-size: 12px; color: #6B7280;")
         subtitle.setWordWrap(True)
         header_layout.addWidget(title)
@@ -97,11 +97,11 @@ class AIChatPanel(QWidget):
         self._append_user(user_msg)
 
         if not self.facade or not hasattr(self.facade, "ai_chat"):
-            self._append_assistant("当前 AI 接口还没有接入。")
+            self._append_assistant("当前没有连接真实 AI 接口。")
             return
         try:
             if hasattr(self.facade, "ai_is_available") and not self.facade.ai_is_available():
-                self._append_assistant("AI 暂不可用，请先在设置里配置 API Key。")
+                self._append_assistant("AI 暂不可用，请先在 AI 设置里配置 DeepSeek API Key。")
                 return
             self.conversation_id, reply = self.facade.ai_chat(self.conversation_id, user_msg)
         except NotImplementedError:

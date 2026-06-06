@@ -105,11 +105,6 @@ class AppFacade:
             raise RuntimeError("sync_manager not wired into AppFacade")
         return self.sync_manager.sync_from_teaching_site(username, password)
 
-    def sync_mock_data(self):
-        if self.sync_manager is None:
-            raise RuntimeError("sync_manager not wired into AppFacade")
-        return self.sync_manager.sync_mock_data()
-
     def get_statistics(self):
         if self.statistics_manager is None:
             raise RuntimeError("statistics_manager not wired into AppFacade")

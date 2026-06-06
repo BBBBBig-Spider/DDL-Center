@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
@@ -85,7 +84,7 @@ class CourseColumnWidget(QFrame):
         else:
             empty = QLabel("暂无任务")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setStyleSheet("color: #9CA3AF; font-size: 12px; padding: 24px;")
+            empty.setStyleSheet("color: #9CA3AF; font-size: 12px; padding: 24px; background-color: transparent;")
             list_layout.addWidget(empty)
 
         list_layout.addStretch()
@@ -148,13 +147,18 @@ class CourseBoardWidget(QWidget):
 
         tasks = self._load_tasks(filters)
         courses = self._load_courses(tasks)
-        if self.facade is None and not tasks and not courses:
-            tasks = self._fallback_tasks(filters)
-            courses = self._derive_courses_from_tasks(tasks)
 
         if any(get_field(task, "course_id") is None for task in tasks):
             courses = list(courses)
             courses.append({"id": None, "name": "通用任务"})
+
+        if not courses:
+            empty = QLabel("暂无课程任务")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setStyleSheet("color: #9CA3AF; font-size: 13px; padding: 32px; background-color: transparent;")
+            self.board_layout.addWidget(empty)
+            self.board_layout.addStretch()
+            return
 
         for course in courses:
             course_id = get_field(course, "id")
@@ -197,48 +201,6 @@ class CourseBoardWidget(QWidget):
             seen.add(course_id)
             courses.append({"id": course_id, "name": course_name or f"课程 {course_id}"})
         return courses
-
-    @staticmethod
-    def _fallback_tasks(filters=None):
-        tasks = [
-            {
-                "id": 1,
-                "title": "高数习题整理",
-                "course_id": 101,
-                "course_name": "高等数学",
-                "description": "演示习题任务",
-                "due_time": datetime(2026, 6, 1, 23, 59),
-                "estimated_hours": 2,
-                "status": "todo",
-                "priority": 1,
-            },
-            {
-                "id": 2,
-                "title": "程序设计项目",
-                "course_id": 202,
-                "course_name": "程序设计实践",
-                "description": "项目里程碑",
-                "due_time": datetime(2026, 6, 3, 12, 0),
-                "estimated_hours": 8,
-                "status": "todo",
-                "priority": 2,
-            },
-            {
-                "id": 3,
-                "title": "物理实验报告",
-                "course_id": 303,
-                "course_name": "大学物理",
-                "description": "误差分析",
-                "due_time": datetime(2026, 6, 5, 18, 0),
-                "estimated_hours": 3,
-                "status": "done",
-                "priority": 3,
-            },
-        ]
-        status = (filters or {}).get("status")
-        if status:
-            tasks = [task for task in tasks if task.get("status") == status]
-        return tasks
 
 
 if __name__ == "__main__":

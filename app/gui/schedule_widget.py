@@ -1,20 +1,83 @@
 from __future__ import annotations
 
 import sys
-from datetime import time
+from datetime import date, datetime, time
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.gui.add_schedule_dialog import AddCourseDialog
-from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT
+from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
+
+
+SEMESTER_START = date(2026, 3, 2)
 
 
 def get_field(obj, key, default=None):
     if isinstance(obj, dict):
         return obj.get(key, default)
     return getattr(obj, key, default)
+
+
+class DDLMarkerWidget(QFrame):
+    def __init__(self, task, parent=None):
+        super().__init__(parent)
+        self.task = task
+        self.expanded = False
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        self.setObjectName("ddlMarker")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(12)
+        self.setStyleSheet(
+            f"""
+            QFrame#ddlMarker {{
+                background-color: #FCE8E8;
+                border-left: 4px solid {PKU_RED};
+                border-radius: 4px;
+            }}
+            QFrame#ddlMarker QLabel {{
+                background-color: transparent;
+            }}
+            """
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(2)
+        self.title = QLabel("DDL")
+        self.title.setStyleSheet(f"color: {PKU_RED_DARK}; font-size: 10px; font-weight: 700;")
+        self.title.setVisible(False)
+        layout.addWidget(self.title)
+
+    def enterEvent(self, event) -> None:
+        task_title = str(get_field(self.task, "title", "未命名任务"))
+        due_time = get_field(self.task, "due_time")
+        due_text = due_time.strftime("%H:%M") if hasattr(due_time, "strftime") else str(due_time)[11:16]
+        self.title.setText(f"DDL {due_text} · {task_title}")
+        self.title.setVisible(True)
+        self.setFixedHeight(46)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.title.setVisible(False)
+        self.setFixedHeight(12)
+        super().leaveEvent(event)
 
 
 class ScheduleWidget(QWidget):
@@ -36,8 +99,9 @@ class ScheduleWidget(QWidget):
     def __init__(self, facade=None):
         super().__init__()
         self.facade = facade
-        self.current_week = 1
+        self.current_week = self._current_semester_week()
         self.custom_slots = []
+        self.gui_task_arrangements = []
         self._next_local_slot_id = 1
         self._init_ui()
         self.refresh_schedule()
@@ -69,24 +133,34 @@ class ScheduleWidget(QWidget):
         top_bar.addWidget(title)
         top_bar.addStretch()
 
-        add_button = QPushButton("添加课程")
-        add_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_button.setStyleSheet(
+        self.show_arrangements_checkbox = QCheckBox("显示 DDL 任务安排")
+        self.show_arrangements_checkbox.setChecked(True)
+        self.show_arrangements_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.show_arrangements_checkbox.setStyleSheet(
             f"""
-            QPushButton {{
-                background-color: #FFFFFF;
-                color: {PKU_RED};
-                border: 1px solid {PKU_RED};
-                border-radius: 4px;
-                padding: 5px 12px;
+            QCheckBox {{
+                color: {TEXT};
+                background-color: transparent;
                 font-size: 13px;
-                font-weight: 700;
             }}
-            QPushButton:hover {{
-                background-color: {PKU_RED_LIGHT};
+            QCheckBox::indicator:checked {{
+                background-color: {PKU_RED};
+                border: 1px solid {PKU_RED};
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
+                border: 1px solid {BORDER};
+                background-color: #FFFFFF;
             }}
             """
         )
+        self.show_arrangements_checkbox.stateChanged.connect(self.refresh_schedule)
+        top_bar.addWidget(self.show_arrangements_checkbox)
+
+        add_button = QPushButton("添加课程")
+        add_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_button.setStyleSheet(secondary_button_style())
         add_button.clicked.connect(self.on_add_course_clicked)
         top_bar.addWidget(add_button)
 
@@ -118,10 +192,14 @@ class ScheduleWidget(QWidget):
         self.week_combo.currentIndexChanged.connect(self.on_week_changed)
         top_bar.addWidget(self.week_combo)
 
-        self.week_type_badge = QLabel("(单周)")
+        self.week_type_badge = QLabel("")
         self.week_type_badge.setStyleSheet(self._badge_style(PKU_RED))
         top_bar.addWidget(self.week_type_badge)
         self.main_layout.addLayout(top_bar)
+        self.week_combo.blockSignals(True)
+        self.week_combo.setCurrentIndex(min(max(self.current_week, 1), 16) - 1)
+        self.week_combo.blockSignals(False)
+        self._update_week_badge()
 
     def _setup_grid_frame(self) -> None:
         days = ["时间", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -143,13 +221,16 @@ class ScheduleWidget(QWidget):
 
     def on_week_changed(self, index):
         self.current_week = self.week_combo.itemData(index) or index + 1
+        self._update_week_badge()
+        self.refresh_schedule()
+
+    def _update_week_badge(self) -> None:
         if self.current_week % 2 == 0:
-            self.week_type_badge.setText("(双周)")
+            self.week_type_badge.setText("双周")
             self.week_type_badge.setStyleSheet(self._badge_style(PKU_GOLD))
         else:
-            self.week_type_badge.setText("(单周)")
+            self.week_type_badge.setText("单周")
             self.week_type_badge.setStyleSheet(self._badge_style(PKU_RED))
-        self.refresh_schedule()
 
     def on_add_course_clicked(self):
         dialog = AddCourseDialog(self)
@@ -165,21 +246,38 @@ class ScheduleWidget(QWidget):
                         new_slot["id"] = slot_id
                     saved_to_facade = True
                 except Exception as exc:
-                    print(f"Facade writing failed: {exc}")
+                    print(f"[GUI] facade schedule create failed: {exc}")
             if not saved_to_facade:
                 self.custom_slots.append(new_slot)
             self.refresh_schedule()
+
+    def set_gui_task_arrangements(self, arrangements) -> None:
+        self.gui_task_arrangements = list(arrangements or [])
+        self.refresh_schedule()
 
     def refresh_schedule(self):
         self._clear_schedule_cards()
         for slot in self._load_schedule_slots():
             if not self._slot_occurs_this_week(slot):
                 continue
-            col = get_field(slot, "weekday", 1)
-            row, row_span = self._slot_to_grid_position(slot)
-            if not isinstance(col, int) or col < 1 or col > 7 or row < 1:
-                continue
-            self.grid_layout.addWidget(self._build_slot_card(slot), row, col, row_span, 1)
+            self._add_card_to_grid(slot, self._build_slot_card(slot))
+
+        if self.show_arrangements_checkbox.isChecked():
+            for arrangement in self._load_task_arrangements():
+                if not self._arrangement_occurs_this_week(arrangement):
+                    continue
+                self._add_card_to_grid(arrangement, self._build_task_arrangement_card(arrangement))
+            for task in self._load_week_tasks():
+                marker = self._build_ddl_marker(task)
+                if marker is not None:
+                    row, col = marker
+                    self.grid_layout.addWidget(DDLMarkerWidget(task), row, col)
+
+    def _add_card_to_grid(self, slot, card) -> None:
+        col = get_field(slot, "weekday", 1)
+        row, row_span = self._slot_to_grid_position(slot)
+        if isinstance(col, int) and 1 <= col <= 7 and row >= 1:
+            self.grid_layout.addWidget(card, row, col, row_span, 1)
 
     def _load_schedule_slots(self):
         base_slots = []
@@ -188,8 +286,34 @@ class ScheduleWidget(QWidget):
                 for weekday in range(1, 8):
                     base_slots.extend(self.facade.list_schedule(weekday, self.current_week))
             except Exception as exc:
-                print(f"Error fetching schedule from Facade: {exc}")
+                print(f"[GUI] error fetching schedule from Facade: {exc}")
         return base_slots + self.custom_slots
+
+    def _load_task_arrangements(self):
+        arrangements = list(self.gui_task_arrangements)
+        if self.facade and hasattr(self.facade, "list_task_arrangements"):
+            try:
+                arrangements.extend(self.facade.list_task_arrangements(self.current_week))
+            except TypeError:
+                arrangements.extend(self.facade.list_task_arrangements())
+            except Exception as exc:
+                print(f"[GUI] failed to load task arrangements: {exc}")
+        deduped = {}
+        for item in arrangements:
+            task_id = get_field(item, "task_id")
+            key = task_id if task_id is not None else id(item)
+            deduped[key] = item
+        return list(deduped.values())
+
+    def _load_week_tasks(self):
+        if not self.facade or not hasattr(self.facade, "list_tasks"):
+            return []
+        try:
+            tasks = self.facade.list_tasks(None)
+        except Exception as exc:
+            print(f"[GUI] failed to load tasks for DDL markers: {exc}")
+            return []
+        return [task for task in tasks if self._task_due_in_current_week(task)]
 
     def _clear_schedule_cards(self):
         for index in range(self.grid_layout.count() - 1, -1, -1):
@@ -204,8 +328,8 @@ class ScheduleWidget(QWidget):
         occurs_in_week = getattr(slot, "occurs_in_week", None)
         if callable(occurs_in_week):
             return occurs_in_week(self.current_week)
-        start_week = get_field(slot, "start_week", 1)
-        end_week = get_field(slot, "end_week", 16)
+        start_week = int(get_field(slot, "start_week", 1) or 1)
+        end_week = int(get_field(slot, "end_week", 16) or 16)
         week_type = get_field(slot, "week_type", "all")
         if not (start_week <= self.current_week <= end_week):
             return False
@@ -214,6 +338,10 @@ class ScheduleWidget(QWidget):
         if week_type == "even" and self.current_week % 2 != 0:
             return False
         return True
+
+    def _arrangement_occurs_this_week(self, arrangement) -> bool:
+        week = get_field(arrangement, "week")
+        return week in (None, self.current_week)
 
     def _slot_to_grid_position(self, slot):
         start_time = self._coerce_time(get_field(slot, "start_time"))
@@ -237,6 +365,8 @@ class ScheduleWidget(QWidget):
             if len(text.split(":")[0]) == 1:
                 text = "0" + text
             return time.fromisoformat(text[:5])
+        if hasattr(value, "strftime"):
+            return time.fromisoformat(value.strftime("%H:%M"))
         return time(8, 0)
 
     def _build_slot_card(self, slot):
@@ -278,11 +408,11 @@ class ScheduleWidget(QWidget):
             time_label.setStyleSheet(f"color: {PKU_RED_DARK}; font-size: 9px; font-weight: 700;")
             layout.addWidget(time_label)
 
-        title = QLabel(get_field(slot, "title", "未命名课程"))
+        title = QLabel(str(get_field(slot, "title", "未命名课程")))
         title.setWordWrap(True)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(f"font-weight: 700; color: {INK}; font-size: 11px;")
-        location = QLabel(get_field(slot, "location", "") or "")
+        location = QLabel(str(get_field(slot, "location", "") or ""))
         location.setWordWrap(True)
         location.setAlignment(Qt.AlignmentFlag.AlignCenter)
         location.setStyleSheet(f"color: {TEXT}; font-size: 9px;")
@@ -290,6 +420,45 @@ class ScheduleWidget(QWidget):
         if location.text():
             layout.addWidget(location)
         return card
+
+    def _build_task_arrangement_card(self, arrangement):
+        card = QFrame()
+        card.setObjectName("taskArrangementCard")
+        card.setStyleSheet(
+            f"""
+            QFrame#taskArrangementCard {{
+                background-color: #FFF8E6;
+                border: 1px dashed {PKU_GOLD};
+                border-radius: 6px;
+            }}
+            QFrame#taskArrangementCard QLabel {{
+                background-color: transparent;
+            }}
+            """
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(2)
+        time_label = QLabel(self._slot_time_text(arrangement))
+        time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        time_label.setStyleSheet(f"color: #8A5A00; font-size: 9px; font-weight: 700;")
+        title = QLabel(str(get_field(arrangement, "task_title", get_field(arrangement, "title", "DDL 任务"))))
+        title.setWordWrap(True)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(f"color: {INK}; font-size: 11px; font-weight: 700;")
+        layout.addWidget(time_label)
+        layout.addWidget(title)
+        return card
+
+    def _build_ddl_marker(self, task):
+        due_time = get_field(task, "due_time")
+        if not hasattr(due_time, "date") or not hasattr(due_time, "time"):
+            return None
+        weekday = due_time.weekday() + 1
+        if not 1 <= weekday <= 7:
+            return None
+        row, _span = self._slot_to_grid_position({"start_time": due_time.time(), "end_time": due_time.time()})
+        return row, weekday
 
     def _is_exact_period_slot(self, slot):
         start_time = self._coerce_time(get_field(slot, "start_time"))
@@ -313,6 +482,7 @@ class ScheduleWidget(QWidget):
             }}
             QMenu::item {{
                 background-color: transparent;
+                color: {INK};
                 padding: 6px 22px 6px 12px;
             }}
             QMenu::item:selected {{
@@ -339,7 +509,7 @@ class ScheduleWidget(QWidget):
         elif self._try_update_backend_slot(slot, updated):
             pass
         else:
-            QMessageBox.information(self, "暂不可编辑", "该课程来自后端，当前 facade 未提供更新接口。")
+            QMessageBox.information(self, "暂不可编辑", "该课程来自后端，当前 Facade 还没有暴露课表更新接口。")
             return
         self.refresh_schedule()
 
@@ -353,7 +523,7 @@ class ScheduleWidget(QWidget):
         elif self._try_delete_backend_slot(slot):
             pass
         else:
-            QMessageBox.information(self, "暂不可删除", "该课程来自后端，当前 facade 未提供删除接口。")
+            QMessageBox.information(self, "暂不可删除", "该课程来自后端，当前 Facade 还没有暴露课表删除接口。")
             return
         self.refresh_schedule()
 
@@ -390,16 +560,32 @@ class ScheduleWidget(QWidget):
         self.facade.delete_schedule_slot(slot_id)
         return True
 
+    def _task_due_in_current_week(self, task) -> bool:
+        due_time = get_field(task, "due_time")
+        if not hasattr(due_time, "date"):
+            return False
+        days = (due_time.date() - SEMESTER_START).days
+        if days < 0:
+            return False
+        return days // 7 + 1 == self.current_week
+
+    @staticmethod
+    def _current_semester_week() -> int:
+        days = (date.today() - SEMESTER_START).days
+        if days < 0:
+            return 1
+        return max(1, min(16, days // 7 + 1))
+
     @staticmethod
     def _badge_style(color):
         return f"background-color: {color}; color: #FFFFFF; border-radius: 4px; padding: 4px 8px; font-size: 12px; font-weight: 700; min-width: 44px;"
 
 
 if __name__ == "__main__":
-    from app.gui.demo_facade import DemoFacade
+    from app.main import build_facade
 
     app = QApplication(sys.argv)
-    window = ScheduleWidget(facade=DemoFacade())
+    window = ScheduleWidget(facade=build_facade())
     window.resize(900, 700)
     window.show()
     sys.exit(app.exec())

@@ -1,8 +1,16 @@
 import os
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - dependency is listed in requirements
+    load_dotenv = None
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 DATA_DIR = os.path.join(ROOT_DIR, "data")
+
+if load_dotenv is not None:
+    load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 DB_PATH = os.path.join(DATA_DIR, "ddl_center.db")
 DB_BACKUP_PATH = os.path.join(DATA_DIR, "ddl_center_backup.db")
@@ -35,15 +43,9 @@ PORTAL_COURSETABLE_URL = (
 LOG_LEVEL = "INFO"
 LOG_FILE = os.path.join(ROOT_DIR, "data", "ddl_center.log")
 
-# Mock data (fallback when real sync is unavailable)
-MOCK_DDL_PATH = os.path.join(DATA_DIR, "mock_ddl.html")
-MOCK_SCHEDULE_PATH = os.path.join(DATA_DIR, "mock_schedule.html")
-MOCK_EXAMS_PATH = os.path.join(DATA_DIR, "mock_exams.html")
-
 # AI integration (DeepSeek via OpenAI-compatible API)
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-chat"
-AI_DAILY_TOKEN_LIMIT = 50_000   # disable AI for the day once this is exceeded
-AI_REQUEST_TIMEOUT = 30         # seconds
-AI_DEMO_RESPONSES_PATH = os.path.join(DATA_DIR, "ai_demo_responses.json")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+AI_DAILY_TOKEN_LIMIT = int(os.getenv("AI_DAILY_TOKEN_LIMIT", "50000"))
+AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "30"))
 

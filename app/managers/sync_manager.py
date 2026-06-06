@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
-from app.config import MOCK_DDL_PATH, MOCK_EXAMS_PATH, MOCK_SCHEDULE_PATH
 from app.models.course import Course
 from app.models.exam import Exam
 from app.models.schedule_slot import ScheduleSlot
@@ -51,28 +48,14 @@ class SyncManager:
         password: str = "",
         *,
         semester: str = "",
-        use_mock_on_failure: bool = True,
     ) -> SyncResult:
         result = SyncResult()
         try:
             raw = self._fetch_network_payloads(username, password, semester)
             result.source = "network"
         except Exception as exc:
-            if not use_mock_on_failure:
-                raise SyncError(str(exc)) from exc
-            raw = self._fetch_mock_payloads()
-            result.used_mock = True
-            result.source = "mock"
-            result.errors.append(f"network fallback: {exc}")
+            raise SyncError(str(exc)) from exc
 
-        self._sync_tasks(self.ddl_parser.parse(raw["ddl"]), result)
-        self._sync_schedule(self.schedule_parser.parse(raw["schedule"]), result)
-        self._sync_exams(self.exam_parser.parse(raw["exams"]), result)
-        return result
-
-    def sync_mock_data(self) -> SyncResult:
-        raw = self._fetch_mock_payloads()
-        result = SyncResult(used_mock=True, source="mock")
         self._sync_tasks(self.ddl_parser.parse(raw["ddl"]), result)
         self._sync_schedule(self.schedule_parser.parse(raw["schedule"]), result)
         self._sync_exams(self.exam_parser.parse(raw["exams"]), result)
@@ -95,14 +78,6 @@ class SyncManager:
             }
         except NetworkError:
             raise
-
-    @staticmethod
-    def _fetch_mock_payloads() -> dict[str, str]:
-        return {
-            "ddl": Path(MOCK_DDL_PATH).read_text(encoding="utf-8"),
-            "schedule": Path(MOCK_SCHEDULE_PATH).read_text(encoding="utf-8"),
-            "exams": Path(MOCK_EXAMS_PATH).read_text(encoding="utf-8"),
-        }
 
     def _sync_tasks(self, tasks: list[Task], result: SyncResult) -> None:
         for task in tasks:

@@ -55,6 +55,7 @@ class SyncDialog(QDialog):
 
         button_row = QHBoxLayout()
         button_row.addStretch()
+
         self.sync_button = QPushButton("开始同步")
         self.sync_button.setStyleSheet(primary_button_style())
         self.sync_button.clicked.connect(self._sync)
@@ -71,31 +72,38 @@ class SyncDialog(QDialog):
 
     def _sync(self) -> None:
         if not self.facade or not hasattr(self.facade, "sync_from_teaching_site"):
-            QMessageBox.warning(self, "无法同步", "当前 facade 未提供同步接口。")
+            QMessageBox.warning(self, "无法同步", "当前 Facade 没有提供教学网同步接口。")
             return
 
         username = self.username_input.text().strip()
         password = self.password_input.text()
-        self.sync_button.setEnabled(False)
-        self.result_output.setPlainText("正在同步...")
+        self._set_busy(True, "正在同步教学网...")
 
         try:
             result = self.facade.sync_from_teaching_site(username, password)
         except NotImplementedError:
-            self.result_output.setPlainText("后端暂未实现同步接口。")
-            self.sync_button.setEnabled(True)
+            self.result_output.setPlainText("后端暂未实现教学网同步接口。")
+            self._set_busy(False)
             return
         except Exception as exc:
             self.result_output.setPlainText(f"同步失败：{exc}")
-            self.sync_button.setEnabled(True)
+            self._set_busy(False)
             return
 
+        self._show_result(result)
+        self._set_busy(False)
+
+    def _set_busy(self, busy: bool, message: str | None = None) -> None:
+        self.sync_button.setEnabled(not busy)
+        if message is not None:
+            self.result_output.setPlainText(message)
+
+    def _show_result(self, result) -> None:
         message = self._format_result(result)
         summary = self._summarize(message)
         if summary:
             message = f"AI 摘要：{summary}\n\n{message}"
         self.result_output.setPlainText(message)
-        self.sync_button.setEnabled(True)
 
     def _format_result(self, result) -> str:
         success = get_field(result, "success", True)

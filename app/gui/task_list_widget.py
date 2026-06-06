@@ -193,7 +193,6 @@ class TaskCardWidget(QFrame):
                 return
             except Exception as exc:
                 QMessageBox.critical(self, "后端错误", f"标记任务完成失败：{exc}")
-        self._update_mock_task(task_id, {"status": "done"})
         self._refresh_parent()
 
     def on_confirm_delete(self):
@@ -203,8 +202,6 @@ class TaskCardWidget(QFrame):
                 self.parent_widget.facade.delete_task(task_id)
             except Exception as exc:
                 QMessageBox.critical(self, "后端错误", f"删除任务失败：{exc}")
-        else:
-            self._delete_mock_task(task_id)
         self._refresh_parent()
 
     def on_confirm_todo(self):
@@ -214,8 +211,6 @@ class TaskCardWidget(QFrame):
                 self.parent_widget.facade.update_task(task_id, {"status": "todo"})
             except Exception as exc:
                 QMessageBox.critical(self, "后端错误", f"恢复任务失败：{exc}")
-        else:
-            self._update_mock_task(task_id, {"status": "todo"})
         self.status_val = "todo"
         self._refresh_parent()
 
@@ -257,8 +252,6 @@ class TaskCardWidget(QFrame):
                     self.parent_widget.facade.update_task(task_id, payload)
                 except Exception as exc:
                     QMessageBox.critical(self, "后端错误", f"更新任务失败：{exc}")
-            elif isinstance(self.task, dict):
-                self.task.update(payload)
         self._refresh_parent()
 
     def on_delete_triggered(self):
@@ -272,23 +265,7 @@ class TaskCardWidget(QFrame):
                 self.parent_widget.facade.delete_task(task_id)
             except Exception as exc:
                 QMessageBox.critical(self, "后端错误", f"删除任务失败：{exc}")
-        else:
-            self._delete_mock_task(task_id)
         self._refresh_parent()
-
-    def _update_mock_task(self, task_id, payload):
-        tasks = getattr(self.parent_widget, "all_mock_tasks", None)
-        if tasks is None:
-            return
-        for task in tasks:
-            if task.get("id") == task_id:
-                task.update(payload)
-                break
-
-    def _delete_mock_task(self, task_id):
-        tasks = getattr(self.parent_widget, "all_mock_tasks", None)
-        if tasks is not None:
-            self.parent_widget.all_mock_tasks = [task for task in tasks if task.get("id") != task_id]
 
     def _refresh_parent(self):
         if hasattr(self.parent_widget, "refresh_current_view"):
@@ -303,10 +280,6 @@ class TaskListWidget(QWidget):
         self.facade = facade
         self.task_manager = getattr(facade, "task_manager", facade)
         self.selected_task_id = None
-        self.all_mock_tasks = [
-            {"id": 1, "title": "高数习题整理", "course_id": 101, "description": "演示任务", "due_time": datetime(2026, 6, 8, 18, 30), "estimated_hours": 2, "status": "todo", "priority": 1},
-            {"id": 2, "title": "程序设计项目", "course_id": 202, "description": "演示项目", "due_time": datetime(2026, 6, 10, 23, 59), "estimated_hours": 8, "status": "done", "priority": 2},
-        ]
         self.init_ui()
         self.refresh_display()
 
@@ -480,11 +453,8 @@ class TaskListWidget(QWidget):
             try:
                 return self.facade.list_tasks(filters)
             except Exception as exc:
-                print(f"[GUI] Facade.list_tasks failed, using mock data: {exc}")
-        selected_status = filters.get("status") if filters else None
-        if selected_status:
-            return [task for task in self.all_mock_tasks if task.get("status") == selected_status]
-        return self.all_mock_tasks
+                print(f"[GUI] Facade.list_tasks failed: {exc}")
+        return []
 
     def current_filters(self):
         selected_status = self.status_combo.currentData()
@@ -533,10 +503,8 @@ class TaskListWidget(QWidget):
                 QMessageBox.critical(self, "后端错误", f"创建任务失败：{exc}")
                 return
         else:
-            next_id = max((task.get("id", 0) for task in self.all_mock_tasks), default=0) + 1
-            payload["id"] = next_id
-            payload.setdefault("status", "todo")
-            self.all_mock_tasks.append(payload)
+            QMessageBox.critical(self, "后端错误", "当前没有连接真实 Facade，无法创建任务。")
+            return
         self.refresh_current_view()
 
     def on_view_changed(self, index):

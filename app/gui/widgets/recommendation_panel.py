@@ -4,7 +4,17 @@ import sys
 from datetime import datetime, time
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.gui.theme import BORDER, INK, MUTED, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
 
@@ -36,6 +46,20 @@ def duration_hours(slot_obj) -> float | None:
     except ValueError:
         return None
     return max(0.0, (end_dt - start_dt).total_seconds() / 3600)
+
+
+def arrangement_from_slot(task_id: int, task_title: str, slot_obj, week: int | None = None) -> dict:
+    return {
+        "task_id": task_id,
+        "task_title": task_title,
+        "title": task_title,
+        "weekday": get_field(slot_obj, "weekday", 1),
+        "start_time": format_time_field(get_field(slot_obj, "start_time", "09:00")),
+        "end_time": format_time_field(get_field(slot_obj, "end_time", "11:00")),
+        "location": get_field(slot_obj, "location", "") or "任务安排",
+        "week": week,
+        "source": "gui",
+    }
 
 
 class RecommendationItemWidget(QFrame):
@@ -170,6 +194,7 @@ class RecommendationPanel(QWidget):
         self.facade = facade
         self.current_task_id: int | None = None
         self.current_task_title = ""
+        self._local_arrangements: dict[int, dict] = {}
         self._init_ui()
         self.refresh_panel()
 
@@ -296,13 +321,16 @@ class RecommendationPanel(QWidget):
         self.list_layout.addWidget(empty_label)
 
     def _load_current_arrangement(self):
-        if not self.facade or not hasattr(self.facade, "get_task_arrangement"):
+        if self.current_task_id is None:
             return None
-        try:
-            return self.facade.get_task_arrangement(self.current_task_id)
-        except Exception as exc:
-            print(f"[GUI] failed to load task arrangement: {exc}")
-            return None
+        if self.facade and hasattr(self.facade, "get_task_arrangement"):
+            try:
+                backend_arrangement = self.facade.get_task_arrangement(self.current_task_id)
+                if backend_arrangement is not None:
+                    return backend_arrangement
+            except Exception as exc:
+                print(f"[GUI] failed to load task arrangement: {exc}")
+        return self._local_arrangements.get(self.current_task_id)
 
     def _load_recommendations(self):
         if not self.facade or not hasattr(self.facade, "recommend_for_task"):
@@ -316,11 +344,18 @@ class RecommendationPanel(QWidget):
             return []
 
     def on_adopt_recommendation(self, slot_obj) -> None:
-        if not self.facade or not hasattr(self.facade, "arrange_task_at_slot"):
-            QMessageBox.information(self, "暂不可用", "当前 facade 未提供任务安排接口。")
+        if self.current_task_id is None:
             return
         try:
-            self.facade.arrange_task_at_slot(self.current_task_id, slot_obj)
+            if self.facade and hasattr(self.facade, "arrange_task_at_slot"):
+                self.facade.arrange_task_at_slot(self.current_task_id, slot_obj)
+            else:
+                self._local_arrangements[self.current_task_id] = arrangement_from_slot(
+                    self.current_task_id,
+                    self.current_task_title,
+                    slot_obj,
+                    self._current_schedule_week(),
+                )
         except Exception as exc:
             QMessageBox.critical(self, "安排失败", str(exc))
             return
@@ -328,20 +363,28 @@ class RecommendationPanel(QWidget):
         self._refresh_schedule_page()
 
     def cancel_current_arrangement(self) -> None:
-        if not self.facade or not hasattr(self.facade, "cancel_task_arrangement"):
+        if self.current_task_id is None:
             return
         try:
-            self.facade.cancel_task_arrangement(self.current_task_id)
+            if self.facade and hasattr(self.facade, "cancel_task_arrangement"):
+                self.facade.cancel_task_arrangement(self.current_task_id)
+            self._local_arrangements.pop(self.current_task_id, None)
         except Exception as exc:
             QMessageBox.critical(self, "取消失败", str(exc))
             return
         self.refresh_panel()
         self._refresh_schedule_page()
 
+    def _current_schedule_week(self) -> int | None:
+        schedule_page = getattr(self.window(), "schedule_page", None)
+        return getattr(schedule_page, "current_week", None)
+
     def _refresh_schedule_page(self) -> None:
         window = self.window()
         schedule_page = getattr(window, "schedule_page", None)
-        if schedule_page and hasattr(schedule_page, "refresh_schedule"):
+        if schedule_page and hasattr(schedule_page, "set_gui_task_arrangements"):
+            schedule_page.set_gui_task_arrangements(list(self._local_arrangements.values()))
+        elif schedule_page and hasattr(schedule_page, "refresh_schedule"):
             schedule_page.refresh_schedule()
 
 
