@@ -55,7 +55,23 @@ class AppFacade:
     def delete_task(self, task_id: int) -> None:
         self.task_manager.delete_task(task_id)
     def list_tasks(self, filters: dict | None = None) -> list[Task]:
-        return self.task_manager.list_tasks(filters)
+        tasks = self.task_manager.list_tasks(filters)
+        self._enrich_course_names(tasks)
+        return tasks
+
+    def _enrich_course_names(self, tasks: list[Task]) -> None:
+        """Attach course_name attribute to each task so the GUI can display it."""
+        if self.course_manager is None:
+            return
+        try:
+            courses = {c.id: c.name for c in self.course_manager.list_courses()}
+        except Exception:
+            return
+        for task in tasks:
+            if task.course_id is not None:
+                task.course_name = courses.get(task.course_id, "")  # type: ignore[attr-defined]
+            else:
+                task.course_name = ""  # type: ignore[attr-defined]
     def mark_task_done(self, task_id: int) -> None:
         self.task_manager.mark_done(task_id)
 
@@ -81,6 +97,21 @@ class AppFacade:
             raise RuntimeError("schedule_manager not wired into AppFacade")
         return self.schedule_manager.get_free_slots(weekday, week)
 
+    def create_schedule_slot(self, data: dict) -> int:
+        if self.schedule_manager is None:
+            raise RuntimeError("schedule_manager not wired into AppFacade")
+        return self.schedule_manager.add_slot(data)
+
+    def update_schedule_slot(self, slot_id: int, data: dict) -> None:
+        if self.schedule_manager is None:
+            raise RuntimeError("schedule_manager not wired into AppFacade")
+        self.schedule_manager.update_slot(slot_id, data)
+
+    def delete_schedule_slot(self, slot_id: int) -> None:
+        if self.schedule_manager is None:
+            raise RuntimeError("schedule_manager not wired into AppFacade")
+        self.schedule_manager.delete_slot(slot_id)
+
     # ─── 提醒 ─────────────────────────────────────────────────
 
     def generate_alerts(self) -> list[Alert]:
@@ -97,6 +128,26 @@ class AppFacade:
         if self.recommendation_manager is None:
             raise RuntimeError("recommendation_manager not wired into AppFacade")
         return self.recommendation_manager.recommend_for_task(task_id)
+
+    def arrange_task_at_slot(self, task_id: int, slot_obj) -> None:
+        if self.recommendation_manager is None:
+            raise RuntimeError("recommendation_manager not wired into AppFacade")
+        self.recommendation_manager.arrange_task_at_slot(task_id, slot_obj)
+
+    def cancel_task_arrangement(self, task_id: int) -> None:
+        if self.recommendation_manager is None:
+            raise RuntimeError("recommendation_manager not wired into AppFacade")
+        self.recommendation_manager.cancel_task_arrangement(task_id)
+
+    def get_task_arrangement(self, task_id: int) -> dict | None:
+        if self.recommendation_manager is None:
+            return None
+        return self.recommendation_manager.get_task_arrangement(task_id)
+
+    def list_task_arrangements(self, week: int | None = None) -> list[dict]:
+        if self.recommendation_manager is None:
+            return []
+        return self.recommendation_manager.list_task_arrangements(week)
 
     # ─── 同步 / 统计 ──────────────────────────────────────────
 

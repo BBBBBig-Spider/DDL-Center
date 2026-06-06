@@ -23,9 +23,7 @@ from PySide6.QtWidgets import (
 
 from app.gui.add_schedule_dialog import AddCourseDialog
 from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
-
-
-SEMESTER_START = date(2026, 3, 2)
+from app.config import SEMESTER_START
 
 
 def get_field(obj, key, default=None):
@@ -103,6 +101,7 @@ class ScheduleWidget(QWidget):
         self.custom_slots = []
         self.gui_task_arrangements = []
         self._next_local_slot_id = 1
+        self._course_color_cache: dict[int, str] = {}  # course_id -> hex color
         self._init_ui()
         self.refresh_schedule()
 
@@ -256,6 +255,7 @@ class ScheduleWidget(QWidget):
         self.refresh_schedule()
 
     def refresh_schedule(self):
+        self._refresh_course_color_cache()
         self._clear_schedule_cards()
         for slot in self._load_schedule_slots():
             if not self._slot_occurs_this_week(slot):
@@ -315,6 +315,45 @@ class ScheduleWidget(QWidget):
             return []
         return [task for task in tasks if self._task_due_in_current_week(task)]
 
+    def _refresh_course_color_cache(self) -> None:
+        if not self.facade or not hasattr(self.facade, "list_courses"):
+            return
+        try:
+            self._course_color_cache = {
+                c.id: c.color for c in self.facade.list_courses() if c.id is not None
+            }
+        except Exception:
+            pass
+
+    def _slot_color(self, course_id) -> tuple[str, str]:
+        """Return (bg_color, border_color) for a slot, using the course's stored color."""
+        _FALLBACK_COLORS = [
+            ("#F8EAEA", "#8C1515"),
+            ("#FFF7E0", "#B8860B"),
+            ("#F1F3E8", "#6B7D3A"),
+            ("#F6EEEE", "#5F0F0F"),
+            ("#EAF0F8", "#1A5276"),
+            ("#F3EAF8", "#6C3483"),
+        ]
+        if course_id is not None and course_id in self._course_color_cache:
+            hex_color = self._course_color_cache[course_id]
+            return self._lighten(hex_color), hex_color
+        if course_id is not None:
+            return _FALLBACK_COLORS[course_id % len(_FALLBACK_COLORS)]
+        return ("#F4EEEE", "#8C1515")
+
+    @staticmethod
+    def _lighten(hex_color: str) -> str:
+        """Return a light tint of the given hex color for use as card background."""
+        hex_color = hex_color.lstrip("#")
+        if len(hex_color) != 6:
+            return "#F4EEEE"
+        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+        r = r + (255 - r) * 85 // 100
+        g = g + (255 - g) * 85 // 100
+        b = b + (255 - b) * 85 // 100
+        return f"#{r:02X}{g:02X}{b:02X}"
+
     def _clear_schedule_cards(self):
         for index in range(self.grid_layout.count() - 1, -1, -1):
             item = self.grid_layout.itemAt(index)
@@ -371,18 +410,7 @@ class ScheduleWidget(QWidget):
 
     def _build_slot_card(self, slot):
         course_id = get_field(slot, "course_id")
-        palette = {
-            101: ("#F8EAEA", "#8C1515"),
-            102: ("#FFF7E0", "#B8860B"),
-            103: ("#F1F3E8", "#6B7D3A"),
-            104: ("#F6EEEE", "#5F0F0F"),
-            105: ("#FFF7E0", "#9B6A1C"),
-            106: ("#F1F3E8", "#6B7D3A"),
-            107: ("#F8EAEA", "#8C1515"),
-            108: ("#FFF7E0", "#B8860B"),
-            109: ("#F6EEEE", "#5F0F0F"),
-        }
-        card_color, border_color = palette.get(course_id, ("#F4EEEE", "#8C1515"))
+        card_color, border_color = self._slot_color(course_id)
         card = QFrame()
         card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         card.customContextMenuRequested.connect(lambda pos, s=slot, w=card: self._show_slot_menu(s, w, pos))

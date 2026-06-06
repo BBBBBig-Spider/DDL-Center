@@ -1,4 +1,5 @@
 import os
+from datetime import date
 
 try:
     from dotenv import load_dotenv
@@ -43,9 +44,21 @@ PORTAL_COURSETABLE_URL = (
 LOG_LEVEL = "INFO"
 LOG_FILE = os.path.join(ROOT_DIR, "data", "ddl_center.log")
 
+# Mock data (fallback when real sync is unavailable)
+MOCK_DDL_PATH = os.path.join(DATA_DIR, "mock_ddl.html")
+MOCK_SCHEDULE_PATH = os.path.join(DATA_DIR, "mock_schedule.html")
+MOCK_EXAMS_PATH = os.path.join(DATA_DIR, "mock_exams.html")
+
 # AI integration (DeepSeek via OpenAI-compatible API)
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 AI_DAILY_TOKEN_LIMIT = int(os.getenv("AI_DAILY_TOKEN_LIMIT", "50000"))
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "30"))
+
+# Semester start date (override via SEMESTER_START env var, format YYYY-MM-DD)
+_semester_start_env = os.getenv("SEMESTER_START", "2026-03-02")
+try:
+    SEMESTER_START = date.fromisoformat(_semester_start_env)
+except ValueError:
+    SEMESTER_START = date(2026, 3, 2)
 

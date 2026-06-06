@@ -106,19 +106,32 @@ class SyncDialog(QDialog):
         self.result_output.setPlainText(message)
 
     def _format_result(self, result) -> str:
-        success = get_field(result, "success", True)
-        message = get_field(result, "message", "同步完成。")
-        created = get_field(result, "created", 0)
-        updated = get_field(result, "updated", 0)
-        skipped = get_field(result, "skipped", 0)
-        status = "成功" if success else "失败"
-        return (
-            f"同步状态：{status}\n"
-            f"结果说明：{message}\n"
-            f"新增：{created}\n"
-            f"更新：{updated}\n"
-            f"跳过：{skipped}"
-        )
+        source = get_field(result, "source", "network")
+        used_mock = get_field(result, "used_mock", False)
+        errors = get_field(result, "errors", [])
+
+        tasks_new = get_field(result, "tasks_new", 0)
+        tasks_updated = get_field(result, "tasks_updated", 0)
+        tasks_unchanged = get_field(result, "tasks_unchanged", 0)
+        schedule_new = get_field(result, "schedule_new", 0)
+        schedule_updated = get_field(result, "schedule_updated", 0)
+        exams_new = get_field(result, "exams_new", 0)
+        exams_updated = get_field(result, "exams_updated", 0)
+        courses_new = get_field(result, "courses_new", 0)
+
+        source_label = "模拟数据" if used_mock else ("网络" if source == "network" else source)
+        lines = [f"同步完成（来源：{source_label}）"]
+        lines.append(f"任务：新增 {tasks_new}，更新 {tasks_updated}，未变 {tasks_unchanged}")
+        lines.append(f"课表：新增 {schedule_new}，更新 {schedule_updated}")
+        lines.append(f"考试：新增 {exams_new}，更新 {exams_updated}")
+        if courses_new:
+            lines.append(f"课程：新增 {courses_new}")
+        if errors:
+            lines.append("")
+            lines.append("警告：")
+            for err in errors:
+                lines.append(f"  • {err}")
+        return "\n".join(lines)
 
     def _summarize(self, text: str) -> str:
         if not self.facade or not hasattr(self.facade, "ai_summarize_ddl"):

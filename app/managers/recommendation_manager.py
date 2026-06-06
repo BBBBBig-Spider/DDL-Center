@@ -8,6 +8,8 @@ class RecommendationManager:
     def __init__(self, task_manager, schedule_manager) -> None:
         self.task_manager = task_manager
         self.schedule_manager = schedule_manager
+        # task_id -> arrangement dict (in-memory; no DB table for arrangements yet)
+        self._arrangements: dict[int, dict] = {}
 
     def recommend_for_task(
         self,
@@ -33,3 +35,48 @@ class RecommendationManager:
                     candidates.append(slot)
         candidates.sort(key=lambda slot: (slot.weekday, slot.start_time))
         return candidates[:max_results]
+
+    # ─── 任务安排 CRUD（内存，重启后清空）────────────────────────
+
+    def arrange_task_at_slot(self, task_id: int, slot_obj) -> None:
+        """将 task_id 与某个时间段关联，覆盖旧安排。"""
+        def _fmt(v) -> str:
+            if v is None:
+                return ""
+            if isinstance(v, str):
+                return v[:5]
+            if hasattr(v, "strftime"):
+                return v.strftime("%H:%M")
+            return str(v)[:5]
+
+        def _get(obj, key, default=None):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
+        task = self.task_manager.get_task(task_id)
+        task_title = task.title if task else str(task_id)
+        week = _get(slot_obj, "start_week")
+        self._arrangements[task_id] = {
+            "task_id": task_id,
+            "task_title": task_title,
+            "title": task_title,
+            "weekday": _get(slot_obj, "weekday", 1),
+            "start_time": _fmt(_get(slot_obj, "start_time", "09:00")),
+            "end_time": _fmt(_get(slot_obj, "end_time", "11:00")),
+            "location": _get(slot_obj, "location", "") or "任务安排",
+            "week": week,
+            "source": "gui",
+        }
+
+    def cancel_task_arrangement(self, task_id: int) -> None:
+        self._arrangements.pop(task_id, None)
+
+    def get_task_arrangement(self, task_id: int) -> dict | None:
+        return self._arrangements.get(task_id)
+
+    def list_task_arrangements(self, week: int | None = None) -> list[dict]:
+        items = list(self._arrangements.values())
+        if week is not None:
+            items = [a for a in items if a.get("week") in (None, week)]
+        return items
