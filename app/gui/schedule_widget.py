@@ -208,13 +208,38 @@ class ScheduleWidget(QWidget):
         self._update_week_badge()
 
     def _setup_grid_frame(self) -> None:
+        self._day_header_badges: dict[int, QLabel] = {}  # col -> badge label
         days = ["时间", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
         for col, day_name in enumerate(days):
-            header = QLabel(day_name)
-            header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            color = PKU_RED_DARK if col == 0 else PKU_RED
-            header.setStyleSheet(f"background-color: {color}; color: white; padding: 9px; font-weight: 700; border-radius: 4px;")
-            self.grid_layout.addWidget(header, 0, col)
+            if col == 0:
+                header = QLabel(day_name)
+                header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                header.setStyleSheet(
+                    f"background-color: {PKU_RED_DARK}; color: white; padding: 9px; "
+                    "font-weight: 700; border-radius: 4px;"
+                )
+                self.grid_layout.addWidget(header, 0, col)
+            else:
+                container = QFrame()
+                container.setStyleSheet(
+                    f"QFrame {{ background-color: {PKU_RED}; border-radius: 4px; }}"
+                    "QFrame QLabel { background-color: transparent; }"
+                )
+                vbox = QVBoxLayout(container)
+                vbox.setContentsMargins(4, 5, 4, 4)
+                vbox.setSpacing(2)
+                day_label = QLabel(day_name)
+                day_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                day_label.setStyleSheet("color: white; font-weight: 700; font-size: 13px;")
+                vbox.addWidget(day_label)
+                badge = QLabel("")
+                badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                badge.setWordWrap(True)
+                badge.setStyleSheet("color: #FFE0E0; font-size: 9px;")
+                badge.setVisible(False)
+                vbox.addWidget(badge)
+                self._day_header_badges[col] = badge
+                self.grid_layout.addWidget(container, 0, col)
 
         for row, (text, _start, _end) in enumerate(self.PERIODS, start=1):
             label = QLabel(text)
@@ -274,16 +299,42 @@ class ScheduleWidget(QWidget):
                 continue
             self._add_card_to_grid(slot, self._build_slot_card(slot))
 
+        week_tasks = self._load_week_tasks()
+        self._update_ddl_header_badges(week_tasks)
+
         if self.show_arrangements_checkbox.isChecked():
             for arrangement in self._load_task_arrangements():
                 if not self._arrangement_occurs_this_week(arrangement):
                     continue
                 self._add_card_to_grid(arrangement, self._build_task_arrangement_card(arrangement))
-            for task in self._load_week_tasks():
-                marker = self._build_ddl_marker(task)
-                if marker is not None:
-                    row, col = marker
-                    self.grid_layout.addWidget(DDLMarkerWidget(task), row, col)
+
+    def _update_ddl_header_badges(self, tasks) -> None:
+        """Show DDL task info in day column headers (avoids grid cell conflicts)."""
+        by_day: dict[int, list] = {}
+        for task in tasks:
+            due = get_field(task, "due_time")
+            if not hasattr(due, "weekday"):
+                continue
+            weekday = due.weekday() + 1  # Mon=1 … Sun=7
+            by_day.setdefault(weekday, []).append(task)
+
+        for col, badge in self._day_header_badges.items():
+            tasks_for_day = by_day.get(col, [])
+            if not tasks_for_day:
+                badge.setVisible(False)
+                badge.setToolTip("")
+            else:
+                lines = []
+                tooltip_lines = []
+                for task in tasks_for_day:
+                    due = get_field(task, "due_time")
+                    time_str = due.strftime("%H:%M") if hasattr(due, "strftime") else ""
+                    title = str(get_field(task, "title", "DDL"))
+                    lines.append(f"⏰ {time_str}")
+                    tooltip_lines.append(f"{time_str}  {title}")
+                badge.setText("\n".join(lines))
+                badge.setToolTip("\n".join(tooltip_lines))
+                badge.setVisible(True)
 
     def _add_card_to_grid(self, slot, card) -> None:
         col = get_field(slot, "weekday", 1)

@@ -245,7 +245,12 @@ class DDLParser:
                 return None
             if not has_explicit_year and due_time < now - timedelta(days=30):
                 try:
-                    due_time = due_time.replace(year=due_time.year + 1)
+                    bumped = due_time.replace(year=due_time.year + 1)
+                    # Only accept the bump if the result is within 8 months from
+                    # now — avoids pushing genuinely past-due dates into a future
+                    # year when syncing mid-semester.
+                    if bumped <= now + timedelta(days=240):
+                        due_time = bumped
                 except ValueError:
                     pass
             return due_time

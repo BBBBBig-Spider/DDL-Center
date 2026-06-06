@@ -94,10 +94,13 @@ class TaskCardWidget(QFrame):
         time_layout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
 
         due_time = self._coerce_datetime(self._get_field("due_time"))
-        due_text = due_time.strftime("%m-%d %H:%M") if due_time else "无截止时间"
+        due_text, due_color, due_bold = self._deadline_display(due_time, self.status_val)
         self.lbl_deadline = QLabel(due_text)
         self.lbl_deadline.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.lbl_deadline.setStyleSheet(f"color: {PKU_RED}; font-weight: bold; font-size: 12px; background-color: transparent;")
+        weight = "bold" if due_bold else "normal"
+        self.lbl_deadline.setStyleSheet(
+            f"color: {due_color}; font-weight: {weight}; font-size: 12px; background-color: transparent;"
+        )
         hours = self._get_field("estimated_hours", 0)
         self.lbl_hours = QLabel(f"预计 {hours} 小时")
         self.lbl_hours.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -138,6 +141,23 @@ class TaskCardWidget(QFrame):
             except ValueError:
                 return None
         return None
+
+    @staticmethod
+    def _deadline_display(due_time, status: str) -> tuple[str, str, bool]:
+        """Return (display_text, color_hex, bold) for a deadline label."""
+        from datetime import timedelta
+        if due_time is None:
+            return "无截止时间", "#9B9B9B", False
+        if status == "done":
+            return due_time.strftime("%m-%d %H:%M"), "#9B9B9B", False
+        now = datetime.now()
+        if due_time < now:
+            return f"已逾期 {due_time.strftime('%m-%d %H:%M')}", "#C0392B", True
+        if due_time <= now + timedelta(hours=24):
+            return f"紧急 {due_time.strftime('%m-%d %H:%M')}", "#C0392B", True
+        if due_time <= now + timedelta(days=3):
+            return due_time.strftime("%m-%d %H:%M"), "#B8860B", True
+        return due_time.strftime("%m-%d %H:%M"), "#555555", False
 
     def _apply_title_style(self):
         if self.status_val == "done":
@@ -394,7 +414,7 @@ class TaskListWidget(QWidget):
         self.batch_toolbar.setObjectName("BatchToolbar")
         self.batch_toolbar.setStyleSheet(
             f"QFrame#BatchToolbar {{ background-color: #FFF8E6; border: 1px solid {PKU_GOLD}; "
-            "border-radius: 6px; padding: 2px; }}"
+            f"border-radius: 6px; padding: 2px; }}"
             f"QFrame#BatchToolbar QLabel {{ background-color: transparent; color: {INK}; }}"
             f"QFrame#BatchToolbar QCheckBox {{ background-color: transparent; color: {INK}; }}"
         )
@@ -513,39 +533,27 @@ class TaskListWidget(QWidget):
         self.main_container_layout.addLayout(self.right_sidebar_layout)
 
     def _purge_overdue(self) -> None:
-        tasks = self._load_tasks({})
-        overdue = [t for t in tasks if self._coerce_datetime_static(get_field(t, "due_time")) and
-                   self._coerce_datetime_static(get_field(t, "due_time")) < datetime.now() and
-                   get_field(t, "status", "todo") != "done"]
-        if not overdue:
-            QMessageBox.information(self, "清理逾期", "当前没有未完成的逾期任务。")
+        if not self.facade or not hasattr(self.facade, "purge_overdue_tasks"):
+            QMessageBox.warning(self, "清理逾期", "当前 Facade 不支持清理逾期功能。")
             return
         reply = QMessageBox.question(
             self, "清理逾期任务",
-            f"找到 {len(overdue)} 项未完成的逾期任务。\n"
-            "同步任务将隐藏，手动任务将永久删除。确认清理？",
+            "将清理所有未完成且已超过截止时间的任务。\n"
+            "同步任务将隐藏（不再显示但保留记录），手动任务将永久删除。\n\n"
+            "确认继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        if self.facade and hasattr(self.facade, "purge_overdue_tasks"):
-            try:
-                count = self.facade.purge_overdue_tasks()
+        try:
+            count = self.facade.purge_overdue_tasks()
+            if count == 0:
+                QMessageBox.information(self, "清理完成", "当前没有需要清理的逾期任务。")
+            else:
                 QMessageBox.information(self, "清理完成", f"已清理 {count} 项逾期任务。")
-            except Exception as exc:
-                QMessageBox.critical(self, "清理失败", str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "清理失败", str(exc))
         self.refresh_current_view()
-
-    @staticmethod
-    def _coerce_datetime_static(value):
-        if isinstance(value, datetime):
-            return value
-        if isinstance(value, str):
-            try:
-                return datetime.fromisoformat(value)
-            except ValueError:
-                return None
-        return None
 
     def toggle_batch_mode(self) -> None:
         self.batch_mode = not self.batch_mode
