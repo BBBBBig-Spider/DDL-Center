@@ -1,0 +1,8 @@
+var headerDirect = angular.module('dc.direct.headerDirect', []);
+headerDirect.directive("headertpl",function(){
+	return {
+		templateUrl : 'app/direct/tpl/header.html'//,
+//        replace :true,
+       // controller:'headertplCtrl'
+    };
+});

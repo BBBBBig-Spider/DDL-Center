@@ -1,0 +1,516 @@
+var incomeCtrl = angular.module('dc.controller.income.incomeCtrl', []);	
+incomeCtrl.controller("incomeController",['$scope','$routeParams','$http','$interval','$timeout',function($scope,$routeParams,$http,$interval,$timeout){
+	$scope.showDetails = false;
+	$scope.yearMonthStart = '';
+	$scope.yearMonthEnd = '';
+	
+	$scope.showChinese = '';
+	$scope.currentMonthBtnValue = '';
+	$scope.recent3MonthBtnValue = '';
+	$scope.recent6MonthBtnValue = '';
+	$scope.recent12MonthBtnValue = '';
+	$scope.searchValue = '';
+	$scope.exportExcelValue = '';
+	
+	$scope.clickType='';
+	$scope.modified = false;
+	
+	$scope.errMsg = null;
+	$scope.incomeList = [];
+	$scope.otherList = [];
+	
+	$scope.nianyue = '';
+	$scope.pch = '';
+	$scope.ffxm = '';
+	$scope.ffdw = '';
+	$scope.fffs = '';
+	$scope.ffxmEn = '';
+	$scope.ffdwEn = '';
+	$scope.fffsEn = '';
+	$scope.fzrxm = '';
+	$scope.bz = '';
+	
+	$scope.rows = [];
+
+	$scope.detailErrMsg = null;
+	$scope.language ='';
+	
+	$scope.incomeSum = {};
+	$scope.otherSum = {};
+	
+	$scope.$watch('yearMonthStart',function(newVal, oldVal){
+		if(newVal==oldVal){
+			$scope.modified = false;
+		}else{
+			$scope.modified = true;
+			var month = 0;
+			var year = newVal.substring(0,4);
+			if(newVal.substring(4,5)==0){
+				month = newVal.substring(5,6);
+			}else{
+				month = newVal.substring(4,6);
+			}
+			$('#yearMonthEnd').datetimepicker('setStartDate', year+"-"+month+"-01");
+		}
+	});
+	
+	$scope.$watch('yearMonthEnd',function(newVal, oldVal){
+		if(newVal==oldVal){
+			$scope.modified = false;
+		}else{
+			$scope.modified = true;
+			var month = 0;
+			var year = newVal.substring(0,4);
+			if(newVal.substring(4,5)==0){
+				month = newVal.substring(5,6);
+			}else{
+				month = newVal.substring(4,6);
+			}
+			$('#yearMonthStart').datetimepicker('setEndDate', year+"-"+month+"-01");
+		}
+	});
+	
+	$scope.setYearMonth = function(date,i){
+		var year=date.getFullYear(); 
+		var month=date.getMonth()+1;
+		month = month-i;
+		if(month<=0){
+			month = month + 12;
+			year = year - 1;
+		}
+		month =(month<10 ? "0"+month:month); 
+		var mydate = (year.toString()+month.toString());
+		return mydate;
+	};
+	
+	$scope.setCurrentMonth = function(){
+		$scope.modified = true;
+		var date=new Date();
+		$scope.yearMonthStart = $scope.setYearMonth(date,0);
+		$scope.yearMonthEnd = $scope.setYearMonth(date,0);
+		$scope.clickType='currentMonth';
+		$scope.retrFacultyIncomes();
+	};
+	
+	$scope.setRecent3Month = function(){
+		$scope.modified = true;
+		var date=new Date();
+		$scope.yearMonthEnd = $scope.setYearMonth(date,0);
+		$scope.yearMonthStart = $scope.setYearMonth(date,2);
+		$scope.clickType='recent3Month';
+		$scope.retrFacultyIncomes();
+	};
+	
+	$scope.setRecent6Month = function(){
+		$scope.modified = true;
+		var date=new Date();
+		$scope.yearMonthEnd = $scope.setYearMonth(date,0);
+		$scope.yearMonthStart = $scope.setYearMonth(date,5);
+		$scope.clickType='recent6Month';
+		$scope.retrFacultyIncomes();
+	};
+	
+	$scope.setRecent12Month = function(){
+		$scope.modified = true;
+		var date=new Date();
+		$scope.yearMonthEnd = $scope.setYearMonth(date,0);
+		$scope.yearMonthStart = $scope.setYearMonth(date,11);
+		$scope.clickType='recent12Month';
+		$scope.retrFacultyIncomes();
+	};
+	
+	$scope.queryByMonth = function(){
+		if(true==$scope.modified){
+			$scope.clickType='queryByMonth';
+		}
+		$scope.retrFacultyIncomes();
+	};
+	
+	$scope.retrFacultyIncomes = function(){
+		if($scope.clickType=='recent12Month'){
+			$('#currentMonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent3MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent6MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent12MonthBtn').removeClass("background-white").addClass("background-red");
+		}else if($scope.clickType=='recent6Month'){
+			$('#currentMonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent3MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent6MonthBtn').removeClass("background-white").addClass("background-red");
+			$('#recent12MonthBtn').removeClass("background-red").addClass("background-white");
+		}else if($scope.clickType=='recent3Month'){
+			$('#currentMonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent3MonthBtn').removeClass("background-white").addClass("background-red");
+			$('#recent6MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent12MonthBtn').removeClass("background-red").addClass("background-white");
+		}else if($scope.clickType=='currentMonth'){
+			$('#currentMonthBtn').removeClass("background-white").addClass("background-red");
+			$('#recent3MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent6MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent12MonthBtn').removeClass("background-red").addClass("background-white");
+		}else if($scope.clickType=='queryByMonth'){
+			$('#currentMonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent3MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent6MonthBtn').removeClass("background-red").addClass("background-white");
+			$('#recent12MonthBtn').removeClass("background-red").addClass("background-white");
+		}
+		
+		$http({
+			method:'POST',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/topic/income/retrFacultyIncomes.do',
+	        params:{
+	        	yearMonthEnd : $scope.yearMonthEnd,
+	        	yearMonthStart : $scope.yearMonthStart,
+	        	type:'EN'
+	        }
+	    }).success(function(response){
+	    	if(true==response.success){
+	    		$scope.modified = false;
+	    		
+	    		$scope.incomeList = response.incomeItems;
+	    		$scope.incomeSum.ffxjSum = response.incomeSum.ffxjSum;
+	    		$scope.incomeSum.xfgzSum = response.incomeSum.xfgzSum;
+	    		$scope.incomeSum.xfjjSum = response.incomeSum.xfjjSum;
+	    		$scope.incomeSum.xfqtSum = response.incomeSum.xfqtSum;
+	    		$scope.incomeSum.qtffSum = response.incomeSum.qtffSum;
+	    		$scope.incomeSum.dkxjSum = response.incomeSum.dkxjSum;
+	    		$scope.incomeSum.gsSum = response.incomeSum.gsSum;
+	    		$scope.incomeSum.zfgjjSum = response.incomeSum.zfgjjSum;
+	    		$scope.incomeSum.bxSum = response.incomeSum.bxSum;
+	    		$scope.incomeSum.qtSum = response.incomeSum.qtSum;
+	    		$scope.incomeSum.sfeSum = response.incomeSum.sfeSum;
+	    	
+	    		$scope.otherList = response.otherItems;
+	    		$scope.otherSum.ffxjSum = response.otherSum.ffxjSum;
+	    		$scope.otherSum.xfgzSum = response.otherSum.xfgzSum;
+	    		$scope.otherSum.xfjjSum = response.otherSum.xfjjSum;
+	    		$scope.otherSum.xfqtSum = response.otherSum.xfqtSum;
+	    		$scope.otherSum.qtffSum = response.otherSum.qtffSum;
+	    		$scope.otherSum.dkxjSum = response.otherSum.dkxjSum;
+	    		$scope.otherSum.gsSum = response.otherSum.gsSum;
+	    		$scope.otherSum.zfgjjSum = response.otherSum.zfgjjSum;
+	    		$scope.otherSum.bxSum = response.otherSum.bxSum;
+	    		$scope.otherSum.qtSum = response.otherSum.qtSum;
+	    		$scope.otherSum.sfeSum = response.otherSum.sfeSum;
+	    		
+	    		$scope.showDetails = false;
+		    	$scope.errMsg = null;
+		    	$scope.$apply();
+		    	$("div#result-table-div").height($("table#incomeInfo").height()+60);
+		    	
+	    	}else{
+	    		$scope.modified = false;
+	    		$scope.incomeList = null;
+	    		$scope.incomeSum.ffxjSum = 0;
+	    		$scope.incomeSum.dkxjSum = 0;
+	    		$scope.incomeSum.sfeSum = 0;
+	    		$scope.otherList = null;
+	    		$scope.otherList.ffxjSum = 0;
+	    		$scope.otherList.dkxjSum = 0;
+	    		$scope.otherList.sfeSum = 0;
+	    		$scope.showDetails = false;
+		    	$scope.errMsg = response.msg;
+	    	}
+	    }).error(function(e, code){
+	    	throw(code);
+	    });
+	};
+	
+	$scope.retrFacultyIncomeDetails = function(item){
+		var offsetTop=$("#incomeDetails").offset();
+		var offset = offsetTop.top;
+		$("html,body").animate({scrollTop:offset},100); 
+		
+		var id = item.id;
+		for(var i=0;i<$scope.incomeList.length;i++){
+			$scope.incomeList[i].clicked =false;
+		}
+		item.clicked = true;
+		$http({
+			method:'POST',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/topic/income/retrFacultyIncomeDetails.do',
+	        params:{
+	        	id : id
+	        }
+	    }).success(function(response){
+	    	if(true==response.success){
+	    		$scope.showDetails = true;
+	    		$scope.nianyue = response.nianyue;
+	    		$scope.pch = response.pch;
+	    		$scope.ffxm = response.ffxm;
+	    		$scope.ffdw = response.ffdw;
+	    		$scope.fffs = response.fffs;
+	    		$scope.ffxmEn = response.ffxmEn;
+	    		$scope.ffdwEn = response.ffdwEn;
+	    		$scope.fffsEn = response.fffsEn;
+	    		$scope.fzrxm = response.fzrxm;
+	    		$scope.bz = response.bz;
+	    		$scope.rows = response.rows;
+		    	$scope.detailErrMsg = null;
+	    	}else{
+	    		$scope.nianyue = null;
+	    		$scope.pch = null;
+	    		$scope.ffxm = null;
+	    		$scope.ffdw = null;
+	    		$scope.fffs = null;
+	    		$scope.ffxmEn = null;
+	    		$scope.ffdwEn = null;
+	    		$scope.fffsEn = null;
+	    		$scope.fzrxm = null;
+	    		$scope.bz = null;
+	    		$scope.rows = response.rows;
+		    	$scope.detailErrMsg = response.msg;
+	    	}
+	    	
+	    }).error(function(e, code){
+	    	throw(code);
+	    });
+	};
+	
+	$scope.changeCHN = function(flag){
+		$scope.showChinese = flag;
+		if("是"==$scope.showChinese){
+			$('#languageCHNButton').removeClass("background-white").addClass("background-red");
+			$('#languageENButton').removeClass("background-red").addClass("background-white");
+			$scope.currentMonthBtnValue = '当月';
+			$scope.recent3MonthBtnValue = '近三月';
+			$scope.recent6MonthBtnValue = '近半年';
+			$scope.recent12MonthBtnValue = '近一年';
+			$scope.searchValue = '查询';
+			$scope.exportExcelValue = 'Excel导出';
+			$scope.language ='zh-CN-M';
+			$scope.$apply();
+	    	$("div#result-table-div").height($("table#incomeInfo").height()+60);
+		}else{
+			$('#languageENButton').removeClass("background-white").addClass("background-red");
+			$('#languageCHNButton').removeClass("background-red").addClass("background-white");
+			$scope.currentMonthBtnValue = 'Current Month';
+			$scope.recent3MonthBtnValue = 'Last 3 months';
+			$scope.recent6MonthBtnValue = 'Last 6 months';
+			$scope.recent12MonthBtnValue = 'Last 12 months';
+			$scope.searchValue = 'Search';
+			$scope.exportExcelValue = 'Export as Excel File';
+			$scope.language ='EN';
+			$scope.$apply();
+	    	$("div#result-table-div").height($("table#incomeInfo").height()+60);
+		}
+	};
+	
+	$scope.exportExcel = function(){
+		if($scope.showChinese == '否'){
+			$("#exportExcel").attr("action","/publicQuery/ctrl/topic/income/exportFacultyIncomeDetails.do?type=EN");
+		}else{
+			$("#exportExcel").attr("action","/publicQuery/ctrl/topic/income/exportFacultyIncomeDetails.do");
+		}
+		$("#exportExcel").submit();
+	};
+	
+	$scope.gotoDiv = function(itemId){
+		var offsetTop=$("#ITEM_"+itemId).offset();
+    	var offset = offsetTop.top;
+    	$("html,body").animate({scrollTop:offset},20); 
+	};
+	
+	$scope.showTip=function(event,id){
+		var off = $(event.target).offset();
+		var left = off.left;
+		var top = off.top;
+	
+		var tip = $("#tip_"+id);
+	 	tip.css("top",top+30);    //元素的垂直滚动条滚动到指定的位置     
+	 	tip.css("left",left+30);
+	 	tip.css("display","block");			
+	};
+	
+	$scope.hideTip=function(id){
+		var tip = $("#tip_"+id);
+		tip.css("display","none");	
+	};
+	
+	
+	/*
+	 * 如下用户手机二次校验，适合单页面功能。
+	 * 注意传入$interval
+	 * 注意checkCode的biz参数
+	 */
+	$scope.checkCodePass=false;
+	$scope.errorMsg=null;
+	$scope.mobileMask=null;
+	$scope.otpBind=false;
+	$scope.otpCode="";
+	$scope.smsCode="";
+	$scope.remainSeconds=60;
+	$scope.remainTip="";
+	$scope.isMobileAuthen = function(){
+		$http({
+            method:'GET',
+            dataType: "json",
+            contentType:'application/json; charset=UTF-8',
+            url:'/publicQuery/ctrl/account/getMobileAuthen4MyIncome.do'
+        }).success(function(response){
+        	if(response.success==true){
+        		if("是" == response.mobileAuthenMyIncome){
+        			$scope.getCheckCodePass();
+        		}else{
+        			$scope.checkCodePass=true;
+        		}
+        	}else{
+        		$scope.errorMsg=response.errMsg;
+        	}
+        }).error(function(e, code){
+        	$scope.errorMsg="系统服务出现异常";
+        	throw(code);
+        });
+	};
+	
+	$scope.getCheckCodePass = function(){
+		$http({
+            method:'GET',
+            dataType: "json",
+            contentType:'application/json; charset=UTF-8',
+            url:'/publicQuery/ctrl/account/getCheckCodePass.do'
+        }).success(function(response){
+        	if(response.success==true){
+        		var checkCodePass = response.checkCodePass;
+        		if(!checkCodePass){
+        			$scope.mobileMask = response.mobileMask;
+	        		$scope.otpBind = response.otpBind;
+	        		$scope.errorMsg=null;
+	        		if(false == $scope.otpBind){
+	        			$scope.sendSMS();
+	        			$timeout(function(){$("input.cell-inp-no-border").eq(1).focus();},500);
+	        		}else{
+	        			$timeout(function(){$("input.cell-inp-no-border").eq(0).focus();},500);
+	        		}
+        		}else{
+        			$scope.checkCodePass=true;
+        		}
+        	}
+        }).error(function(e, code){
+        	$scope.errorMsg="系统服务出现异常";
+        	throw(code);
+        });
+	};
+	
+	
+	$scope.enter2ChkCode=function(e){
+		if(e.keyCode==13)
+			$scope.checkCode();
+	};
+	
+	$scope.checkCode = function(){
+		if($scope.otpBind==true){
+			if(""==$scope.otpCode){
+				$scope.errorMsg="请输入手机令牌";
+			}else{
+				$http({
+		            method:'POST',
+		            dataType: "json",
+		            contentType:'application/json; charset=UTF-8',
+		            url:'/publicQuery/ctrl/account/validOTPCode.do',
+		            params:{otpCode:$scope.otpCode}
+		        }).success(function(response){
+		        	if(response.success==true){
+		        		$scope.checkCodePass=true;
+		        	}
+		        	else{
+		        		$scope.errorMsg=response.errMsg;
+		        	}
+		        }).error(function(e, code){
+		        	throw(code);
+		        });
+			}
+		}else if($scope.otpBind==false){
+			if(""==$scope.smsCode){
+				$scope.errorMsg="请输入验证码";
+			}else{
+				$http({
+		            method:'POST',
+		            dataType: "json",
+		            contentType:'application/json; charset=UTF-8',
+		            url:'/publicQuery/ctrl/account/validSMSCode.do',
+		            params:{smsCode:$scope.smsCode}
+		        }).success(function(response){
+		        	if(response.success==true){
+		        		$scope.checkCodePass=true;
+		        	}
+		        	else{
+		        		$scope.errorMsg=response.errMsg;
+		        	}
+		        }).error(function(e, code){
+		        	throw(code);
+		        });
+			}
+		}
+	};
+	
+	$scope.sendSMS = function(){
+		if($scope.remainSeconds==0 || $scope.remainSeconds==60){
+			$http({
+	            method:'POST',
+	            dataType: "json",
+	            contentType:'application/json; charset=UTF-8',
+	            url:'/publicQuery/ctrl/account/sendSMSCode.do'
+	        }).success(function(response){
+	        	if(response.success==true){
+	        		$("#sendSMSBtn").attr("disabled","disabled").removeAttr("href").children("span").removeClass("pku-red").addClass("pku-grey");
+	        		$scope.remainSeconds=60;
+		    		$interval(function(){
+		    			$scope.remainSeconds=$scope.remainSeconds-1;
+		    			$scope.remainTip = "（"+$scope.remainSeconds+"S）";
+		    			if($scope.remainSeconds==0){
+		    				$scope.remainTip = "";
+		    				$("#sendSMSBtn").removeAttr("disabled").attr("href","javascript:void(0);").children("span").removeClass("pku-grey").addClass("pku-red");
+		    			}
+		    		}, 1000, 60);
+	        	}else{
+	        		$scope.errorMsg=response.errMsg;
+	        	}
+	        }).error(function(e, code){
+	        	throw(code);
+	        });
+		}
+	};
+	
+    //初始化函数
+    var init = function(){
+    	$scope.isMobileAuthen();
+    	if($routeParams.language=='CHN'){
+    		$scope.showChinese = '是';
+    	}else{
+    		$scope.showChinese = '否';
+    	}
+    	if("是"==$scope.showChinese){
+			$('#languageCHNButton').removeClass("background-white").addClass("background-red");
+			$('#languageENButton').removeClass("background-red").addClass("background-white");
+			$scope.currentMonthBtnValue = '当月';
+			$scope.recent3MonthBtnValue = '近三月';
+			$scope.recent6MonthBtnValue = '近半年';
+			$scope.recent12MonthBtnValue = '近一年';
+			$scope.searchValue = '查询';
+			$scope.exportExcelValue = 'Excel导出';
+			$scope.language ='zh-CN-M';
+		}else{
+			$('#languageENButton').removeClass("background-white").addClass("background-red");
+			$('#languageCHNButton').removeClass("background-red").addClass("background-white");
+			$scope.currentMonthBtnValue = 'Current Month';
+			$scope.recent3MonthBtnValue = 'Last 3 months';
+			$scope.recent6MonthBtnValue = 'Last 6 months';
+			$scope.recent12MonthBtnValue = 'Last 12 months';
+			$scope.searchValue = 'Search';
+			$scope.exportExcelValue = 'Export as Excel File';
+			$scope.language ='EN';
+		}
+    	$("div#result-table-div").height($("table#incomeInfo").height()+60);
+    	
+    	var date = new Date();
+    	$scope.yearMonthStart = $scope.setYearMonth(date,0);
+    	$scope.yearMonthEnd = $scope.setYearMonth(date,0);
+    	$("#yearMonthStart").val($scope.yearMonthStart);
+    	$("#yearMonthEnd").val($scope.yearMonthEnd);
+    };
+    init();
+}]);

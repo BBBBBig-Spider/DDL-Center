@@ -1,0 +1,19 @@
+var dc = angular.module ('dc', ['dc.mainCtrl','dc.router','dc.direct']);
+dc.factory('userInterceptor', ['$q', userInterceptor]);
+function userInterceptor($q) {
+	return {
+		responseError: function(err){
+			// 判断错误码，如果是未登录
+            if(err.status == "401"){
+            	window.location.href="/publicQuery/login.jsp";
+            }else if(err.status == "403"){
+            	window.location.href="/publicQuery/#/403";
+            }
+			return $q.reject(err);
+		}
+	};
+};
+// 添加对应的 Interceptors
+dc.config(['$httpProvider', function($httpProvider){
+	$httpProvider.interceptors.push(userInterceptor);
+}]);

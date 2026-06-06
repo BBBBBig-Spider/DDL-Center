@@ -1,0 +1,217 @@
+var hedsSvcQueryCtrl = angular.module('dc.controller.heds.hedsSvcQueryCtrl', []);
+hedsSvcQueryCtrl.controller("hedsSvcQueryController", ['$scope','$http','$timeout',function($scope, $http,$timeout) {
+	$scope.errorMsg = "";
+	$scope.keyWord = null;
+	$scope.querySvcs = [];
+	$scope.allSvcs = [];
+	$scope.queryNullMsg ="";
+	$scope.svcCount=0;
+	$scope.svcDescTip="";
+	
+	$scope.svcContentText = "";
+	$scope.errorPageText = "";
+	$scope.authPageText = "";
+	
+	$scope.search = function() {
+		$scope.querySvcs = [];
+		if ($scope.keyWord != null && $scope.keyWord != "") {
+			for (var i = 0; i < $scope.allSvcs.length; i++) {
+				var svc = $scope.allSvcs[i];
+				if (svc.name.indexOf($scope.keyWord) > -1) {
+					$scope.querySvcs.push(svc);
+				}
+			}
+			if ($scope.querySvcs.length == 0) {
+				$scope.queryNullMsg = "尚未找到符合条件的接口";
+				$scope.svcCount=0;
+			} else {
+				$scope.queryNullMsg = "";
+				$scope.svcCount=$scope.querySvcs.length;
+			}
+		}else{
+			$scope.querySvcs = $scope.allSvcs;
+			$scope.svcCount=$scope.querySvcs.length;
+			$scope.queryNullMsg = "";
+		}
+	};
+
+	$scope.changeKeyword = function() {
+		$scope.search();
+		if ($scope.keyWord == null || $scope.keyWord == "")
+			$("#clear_btn").hide();
+		else
+			$("#clear_btn").show();
+	};
+
+	$scope.enterKeyword = function(e) {
+		if (e.keyCode == 13) {
+			$scope.keyWord = $("#keyword").val();
+			$scope.search();
+		} else $("#clear_btn").show();
+	};
+
+	$scope.clear = function() {
+		$scope.keyWord = null;
+		$scope.search();
+		$("#clear_btn").hide();
+		$("#keyword").select();
+	};
+
+	$scope.lisAllSvcs = function() {
+		var isPkuApp = false;
+		var UA = navigator.userAgent.toLowerCase();
+		if(UA.indexOf("pkuios") > -1||UA.indexOf("pkuandroid") > -1||UA.indexOf("micromessenger") > -1||UA.indexOf("pkuharmony") > -1){
+			isPkuApp = true;
+		}
+		
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/common/heds/allsvcs.do'
+	    }).success(function(response){
+	    	if(response.success==true){
+	    		for(var i=0;i<response.data.length;i++){
+	    			var item = response.data[i];
+	    			var isopStatus = item.isopStatus;
+	    			if(isopStatus!=='已集成'){
+	    				if(isPkuApp) 
+	    					item.isopAddr="https://wxsp.pku.edu.cn/portal2017/bizcenter/proc/redirectToPROC.do?formUrl=https://process.pku.edu.cn/v2/matter/detail?id=519";
+	    				else 
+	    					item.isopAddr="https://portal.pku.edu.cn/portal2017/bizcenter/proc/redirectToPROC.do?formUrl=https://process.pku.edu.cn/v2/matter/detail?id=519";
+	    			}
+	    		}
+	    		$scope.allSvcs = response.data;
+	    		$scope.querySvcs = response.data;
+	    		$scope.svcCount=$scope.querySvcs.length;
+	    	}
+	    }).error(function(e, code){
+	       	throw(code);
+	    });
+	};
+
+	$scope.getSvcContents = function(item) {
+		$http({
+	    	method:'POST',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/common/heds/getSvcContent.do',
+	        data:{
+	        	url:item.isopAddr
+	        }
+	    }).success(function(response){
+	    	if(response.success==true){
+	    		var win_width = $(window).width();
+				var win_height = $(window).height();
+				var f_w = 520;
+				var f_h = 490;
+				if (win_width < 520)
+					f_w = win_width - 40;
+				if (win_height < 490)
+					f_h = win_height - 60;
+				$(".lightbox_fore#svcContentWin").width(f_w);
+				$(".lightbox_fore#svcContentWin").height(f_h);
+				$(".lightbox_fore#svcContentWin").css("left", (win_width - f_w) / 2);
+				$(".lightbox_fore#svcContentWin").css("top", (win_height - f_h) / 2);
+				$(".lightbox_fore#svcContentWin").css("overflow-y","scroll");
+				$(".lightbox_back#infoTipBg").show();
+				$(".lightbox_fore#svcContentWin").show();
+	    		$timeout(function(){
+	    			$scope.svcContentText = response.content;
+	    			$("#svcContent").html($scope.svcContentText);
+	    		},500);
+	    	}
+	    }).error(function(e, code){
+	       	throw(code);
+	    });
+	};
+	
+	$scope.showSvcContentInfo = function() {
+		$("#svcContentTitle").removeClass("pku-black").addClass("pku-red");
+		$("#errorPageTitle").removeClass("pku-red").addClass("pku-black");
+		$("#authPageTitle").removeClass("pku-red").addClass("pku-black");
+		
+		$("#svcContent").html($scope.svcContentText);
+	};
+	
+	$scope.showErrorPageInfo = function() {
+		$("#svcContentTitle").removeClass("pku-red").addClass("pku-black");
+		$("#errorPageTitle").removeClass("pku-black").addClass("pku-red");
+		$("#authPageTitle").removeClass("pku-red").addClass("pku-black");
+		
+		
+		if(null==$scope.errorPageText||''==$scope.errorPageText){
+			$http({
+		    	method:'GET',
+		        dataType: "json",
+		        contentType:'application/json; charset=UTF-8',
+		        url:'/publicQuery/ctrl/common/heds/getErrorPageInfo.do'
+		    }).success(function(response){
+		    	if(response.success==true){
+		    		$timeout(function(){
+		    			$scope.errorPageText = response.content;
+			    		$("#svcContent").html($scope.errorPageText);
+		    		},500);
+		    	}
+		    }).error(function(e, code){
+		       	throw(code);
+		    });
+		}else{
+			$("#svcContent").html($scope.errorPageText);
+		}
+	};
+	
+	$scope.showAuthPageInfo = function() {
+		$("#svcContentTitle").removeClass("pku-red").addClass("pku-black");
+		$("#errorPageTitle").removeClass("pku-red").addClass("pku-black");
+		$("#authPageTitle").removeClass("pku-black").addClass("pku-red");
+		
+		if(null==$scope.authPageText||''==$scope.authPageText){
+			$http({
+		    	method:'GET',
+		        dataType: "json",
+		        contentType:'application/json; charset=UTF-8',
+		        url:'/publicQuery/ctrl/common/heds/getAuthPageInfo.do'
+		    }).success(function(response){
+		    	if(response.success==true){
+		    		$timeout(function(){
+		    			$scope.authPageText = response.content;
+		    			$("#svcContent").html($scope.authPageText);
+		    		},500);
+		    	}
+		    }).error(function(e, code){
+		       	throw(code);
+		    });
+		}else{
+			$("#svcContent").html($scope.authPageText);
+		}
+	};
+	
+	$scope.closeContentWin = function() {
+		$(".lightbox_back#infoTipBg").hide();
+		$(".lightbox_fore#svcContentWin").fadeOut();
+	};
+	
+	
+	$scope.showDescTip=function(event,item){
+		var off = $(event.target).offset();
+		var left = off.left;
+		var top = off.top;
+		
+		$scope.svcDescTip = item.svcDesc;
+		$("#svcDescTip").css("top",top+30);    //元素的垂直滚动条滚动到指定的位置     
+		$("#svcDescTip").css("left",left+30);
+		$("#svcDescTip").css("display","block");			
+	};
+		
+	$scope.hideDescTip=function(){
+		$scope.svcDescTip = "";
+		$("#svcDescTip").css("display","none");	
+	};
+	
+	var init = function() {
+		$("#keyword").focus();
+		$scope.lisAllSvcs();
+	};
+	init();
+}]);

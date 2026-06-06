@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from datetime import datetime
 from typing import Any
 
@@ -19,6 +21,7 @@ class SyncManager:
         self,
         *,
         auth_client,
+        portal_auth_client=None,
         teaching_site_client,
         ddl_parser,
         schedule_parser,
@@ -31,6 +34,7 @@ class SyncManager:
         ai_assistant_manager=None,
     ) -> None:
         self.auth_client = auth_client
+        self.portal_auth_client = portal_auth_client or auth_client
         self.teaching_site_client = teaching_site_client
         self.ddl_parser = ddl_parser
         self.schedule_parser = schedule_parser
@@ -48,36 +52,70 @@ class SyncManager:
         password: str = "",
         *,
         semester: str = "",
+        otp_code: str = "",
     ) -> SyncResult:
         result = SyncResult()
         try:
-            raw = self._fetch_network_payloads(username, password, semester)
+            session = self._login(username, password)
             result.source = "network"
         except Exception as exc:
             raise SyncError(str(exc)) from exc
 
-        self._sync_tasks(self.ddl_parser.parse(raw["ddl"]), result)
-        self._sync_schedule(self.schedule_parser.parse(raw["schedule"]), result)
-        self._sync_exams(self.exam_parser.parse(raw["exams"]), result)
+        self._sync_section(
+            result,
+            label="DDL",
+            fetch=lambda: self.teaching_site_client.fetch_ddl(session, semester),
+            parse=self.ddl_parser.parse,
+            apply=self._sync_tasks,
+        )
+        self._sync_section(
+            result,
+            label="课表",
+            fetch=lambda: self.teaching_site_client.fetch_schedule(self._login_portal(username, password, otp_code), semester),
+            parse=self.schedule_parser.parse,
+            apply=self._sync_schedule,
+        )
+        self._sync_section(
+            result,
+            label="考试",
+            fetch=lambda: self.teaching_site_client.fetch_exams(session, semester),
+            parse=self.exam_parser.parse,
+            apply=self._sync_exams,
+        )
         return result
 
-    def _fetch_network_payloads(
+    def _login(
         self,
         username: str,
         password: str,
-        semester: str,
-    ) -> dict[str, str]:
+    ):
+        username = username or os.getenv("PKU_USERNAME", "")
+        password = password or os.getenv("PKU_PASSWORD", "")
         if not username or not password:
             raise SyncError("username and password are required for network sync")
-        session = self.auth_client.login(username, password)
+        return self.auth_client.login(username, password)
+
+    def _login_portal(
+        self,
+        username: str,
+        password: str,
+        otp_code: str = "",
+    ):
+        username = username or os.getenv("PKU_USERNAME", "")
+        password = password or os.getenv("PKU_PASSWORD", "")
+        otp_code = otp_code or os.getenv("PKU_OTP_CODE", "")
+        if not username or not password:
+            raise SyncError("username and password are required for portal sync")
+        return self.portal_auth_client.login(username, password, otp_code=otp_code)
+
+    @staticmethod
+    def _sync_section(result: SyncResult, *, label: str, fetch, parse, apply) -> None:
         try:
-            return {
-                "ddl": self.teaching_site_client.fetch_ddl(session, semester),
-                "schedule": self.teaching_site_client.fetch_schedule(session, semester),
-                "exams": self.teaching_site_client.fetch_exams(session, semester),
-            }
-        except NetworkError:
-            raise
+            raw = fetch()
+            items = parse(raw)
+            apply(items, result)
+        except Exception as exc:
+            result.errors.append(f"{label}同步失败：{exc}")
 
     def _sync_tasks(self, tasks: list[Task], result: SyncResult) -> None:
         for task in tasks:

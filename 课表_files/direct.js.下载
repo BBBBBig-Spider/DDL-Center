@@ -1,0 +1,7 @@
+angular.module('dc.direct', ['dc.direct.headerDirect',
+                                 'dc.direct.footerDirect',
+                                 'dc.direct.gotoTopDirect',
+                                 'dc.direct.introTitImgDirect',
+                                 'dc.direct.goBackDirect',
+                                 'dc.direct.tableCellDirect',
+                                 'dc.direct.datetimepickerDirect']);

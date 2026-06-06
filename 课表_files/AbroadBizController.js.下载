@@ -1,0 +1,68 @@
+var abroadBizCtrl = angular.module('dc.controller.abroadBiz.abroadBizCtrl', []);
+abroadBizCtrl.controller("abroadBizController", ['$scope','$rootScope','$location','$http',function($scope, $rootScope, $location,$http) {
+			$scope.errorMsg = "";
+			$scope.showHistory = false;
+			$scope.passportList = null;
+			$scope.selectedPspt = null;
+			$scope.abroadTodoList = null;
+			$scope.abroadHisList = null;
+			$scope.getMyPassportList = function() {
+				$http({
+							method : 'GET',
+							dataType : "json",
+							contentType : 'application/json; charset=UTF-8',
+							url : '/publicQuery/ctrl/common/depart/retrPassports.do'
+						}).success(function(response) {
+							if (response.success == true) {
+								$scope.passportList = response.rows;
+								$scope.errorMsg = null;
+							} else {
+								$scope.passportList = null;
+								$scope.errorMsg = response.msg;
+							}
+						}).error(function(e, code) {
+							throw (code);
+						});
+			};
+			$scope.selectPspt = function(pspt) {
+				$scope.selectedPspt = pspt;
+			};
+			$scope.addPassport = function() {
+				$rootScope.psptInfo = null;
+				$location.path("/abroadBiz/pspt");
+			}
+			$scope.editPassport = function(pspt) {
+				$rootScope.psptInfo = pspt;
+				$location.path("/abroadBiz/pspt/" + pspt.hzh);
+			}
+			$scope.deletePassport = function(pspt) {
+				var confirmed = confirm("您确定要删除该证照信息？");
+				if (confirmed) {
+					if (pspt != null && "" != pspt.hzh) {
+						$http({
+							method : 'POST',
+							dataType : "json",
+							contentType : 'application/json; charset=UTF-8',
+							url : '/publicQuery/ctrl/common/depart/removePassport.do',
+							params : {
+								passportNo : pspt.hzh
+							}
+						}).success(function(response) {
+									if (response.success == true) {
+										$scope.errorMsg = null
+										$scope.getMyPassportList();
+									} else {
+										$scope.errorMsg = response.msg;
+									}
+								}).error(function(e, code) {
+									throw (code);
+								});
+					}
+				}
+			}
+			// 初始化函数
+			var init = function() {
+				$scope.getMyPassportList();
+			};
+			init();
+		}]);

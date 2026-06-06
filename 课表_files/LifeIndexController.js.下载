@@ -1,0 +1,722 @@
+var lifeIndexCtrl = angular.module('dc.controller.life.lifeIndexCtrl', []);	
+lifeIndexCtrl.controller("lifeIndexController",['$scope','$http',function($scope,$http){
+	$scope.classrooms = [];
+	$scope.canteens=[];
+		
+	var dataTimerID;
+	var chartTimerID;
+				
+	$scope.provideNumber = 3;
+	$scope.rotate = 0;
+		
+	$scope.retrCarteenInfos = function(){
+		var xAxis=[];
+		var yAxis0=[];
+		var yAxis1=[];
+		var yAxis2=[];
+		var yAxisShow0=[];
+		var yAxisShow1=[];
+		var yAxisShow2=[];
+			
+		var msgAxis=[];			
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/canteenQuery/retrCarteenInfos.do'
+	    }).success(function(response){
+	        $scope.time=response.time;
+	        var data = response.rows;
+	       	if (data.length > 0) {
+	   			for(var i=0;i<data.length;i++){
+	    			var name = data[i].name;
+	    			xAxis.push(name);
+	    			var occupied = data[i].ip;
+	    			var total =data[i].seat; 
+	    			var warningMsg = data[i].warningMsg; 
+	    			if(warningMsg!=null&&warningMsg!=''){
+						msgAxis.push("y");
+					}else{
+						msgAxis.push("n");
+					}
+	    				
+	    			if(occupied<total){
+	    				yAxis0.push(total);
+	        			if(occupied>0){
+	    					yAxis1.push(occupied);
+	    				}else{
+	    					yAxis1.push("-");
+	    				}
+						var free = total-occupied;
+						if(free>0){
+							yAxis2.push(free);
+						}else{
+							yAxis2.push("-");
+						}
+							
+						yAxisShow0.push(total);
+						yAxisShow1.push(occupied);
+						yAxisShow2.push(free);
+					}else{
+						yAxis0.push(occupied);
+						yAxis1.push(occupied);
+						yAxis2.push("-");
+							
+						yAxisShow0.push(total);
+						yAxisShow1.push(occupied);
+						yAxisShow2.push(0);		
+					}
+	    		}
+	    	}
+	           
+	    	var option0 = {
+	    		tooltip : {
+	    			trigger: 'axis',
+	    	        formatter: function (params) { 
+	    	        	var res = params[0].name; 
+	    	        	if(params[2].data>0){
+	    	        		res += '<br/>'+ params[1].seriesName + ' : ' + params[1].data; 
+	    	        		res += '<br/>'+ params[2].seriesName + ' : ' + params[2].data;
+	    	        		return res;
+	    	        	}else{
+	    	        		res += '<br/>'+ params[1].seriesName + ' : ' + params[0].data; 
+	    	        		res += '<br/>'+ params[2].seriesName + ' : 0' ;
+	    	        		return res;
+	    	        	}
+	    	        },
+	        	    textStyle:{
+	        	        align:'left'
+	        	    }
+	    		},		
+	    		grid: {
+	    			top:'15',
+	    			left: '1%',
+	        		right: '1%',
+	    			bottom: '5%',
+	    			containLabel: true
+	    		},
+	    	    calculable : false,
+	    	    xAxis : [{	
+	    	    	type : 'category',
+	    	    	data : xAxis,
+	    	    	axisLabel:{
+	    	    		interval: 0,
+	    	    		fontSize:12,
+	                    lineHeight: 14,
+	        			fontFamily:'Microsoft YaHei, Arial',
+	        			fontWeight: 'bold',
+	        			color:'#000',
+	    	            formatter:function(params){
+	    	                var newParamsName = "";// 最终拼接成的字符串
+	    	                var paramsNameNumber = params.length;// 实际标签的个数
+	    	                var provideNumber = $scope.provideNumber;// 每行能显示的字的个数
+	    	                var rowNumber = Math.ceil(paramsNameNumber / provideNumber);// 换行的话，需要显示几行，向上取整
+	    	                if (paramsNameNumber > provideNumber) {
+	    	                    for (var p = 0; p < rowNumber; p++) {
+	    	                    	var tempStr = "";// 表示每一次截取的字符串
+	    	                    	var start = p * provideNumber;// 开始截取的位置
+	    	                        var end = start + provideNumber;// 结束截取的位置
+	    	                        // 此处特殊处理最后一行的索引值
+	    	                        if (p == rowNumber - 1) {
+	    	                        	// 最后一次不换行
+	    	                            tempStr = params.substring(start, paramsNameNumber);
+	    	                        } else {
+	    	                            // 每一次拼接字符串并换行
+	    	                            tempStr = params.substring(start, end) + "\n";
+	    	                        }
+	    	                        newParamsName += tempStr;// 最终拼成的字符串
+	    	                   	}
+	    	               	} else {
+	    	                	newParamsName = params;
+	    	                }
+	    	                return newParamsName;
+	    	            }
+	    	    	},
+	    	    	axisTick:{
+	    	    		show:false
+	    	        },
+	    	        axisLine:{
+	    	            lineStyle:{
+	    	            	color:'#999'
+	    	            }
+	    	        }
+	    	    }],
+	    	    yAxis : [{
+        			show:false,
+        	    	axisLabel:{
+        	    		show:false,
+        	    		fontSize:1,
+        	    		margin :0,
+        	    		width:1
+        	    	}
+        		}],
+	    	    series : [ {
+	    	    	name: '总座位',
+	    	        type: 'bar',
+	    	        barMaxWidth: '40',
+	    	        barGap: '-100%',
+	    	        data:yAxis0,
+	    	        itemStyle: {
+	    	            normal: {
+	    	            	barBorderRadius:[5,5,5,5],
+	    	            	color: function(params) {
+	    	            		if(msgAxis[params.dataIndex]=='y'){
+	    	            			return 'RGBA(255,128,0,0.2)';
+		           	    		}else{
+		           	    			return 'RGBA(51,126,255,0.2)';
+		           	    		}
+		           	    	},  
+	    	    		    label: {
+	    	    		        show: true,
+	    	        			position: 'top',
+	    	        			distance: 15,
+	    	        			verticalAlign: 'middle',
+	    	        			rotate:$scope.rotate,
+	    	        			rich: {
+	    	        				a: {
+	    	        					fontSize:12,
+	    	        	                lineHeight: 14,
+	    	        	                fontFamily:'Microsoft YaHei, Arial',
+	    	        	                color:'#000',
+	    	        	                fontWeight: 'bold'
+	    	        				},
+	    	        	            b:{
+	    	        	                fontSize:12,
+	    	        	                lineHeight: 14,
+	    	        	                fontFamily:'Microsoft YaHei, Arial',
+	    	        	                color:'#000',
+	    	        	                fontWeight: 'bold'
+	    	        	           	}
+	    	        			},
+	    	        						
+	    	        			formatter: function(params) {
+	    	        				if(msgAxis[params.dataIndex]=='y'){
+	    	        					return '{b|'+yAxisShow0[params.dataIndex]+'}';
+	    	        				}else{
+	    	        					return '{a|'+yAxisShow0[params.dataIndex]+'}';
+	    	        				}	    	
+	    	        			}
+	    	        		}
+	    	            }
+	    	        }
+	    	    },{
+	    	    	name:'当前人数',
+	    	    	type:'bar',
+	    	    	barMaxWidth: '40',
+	    	    	stack: '总量',
+	    	    	data:yAxis1,
+	    	    	itemStyle: {
+	    	    		normal: {
+	    	    			barBorderRadius:[5,5,5,5],
+	    	    			color: function(params) {
+	            				if(msgAxis[params.dataIndex]=='y'){
+	            					return 'RGBA(255,128,0,0.6)';
+	            				}else{
+	            					return 'RGBA(51,126,255,1)';
+	            				}
+	            			},     
+	    	    		    label: {
+	    	    		        show: false,
+	    		        		position: 'inside',
+	    		        		rotate:$scope.rotate,
+	    		        		formatter: function(params) {
+	    		        			return yAxisShow1[params.dataIndex];
+	    		        		},
+	    		        		color: '#fff',
+				        		fontWeight: 'bold'
+	    	    		    }
+	    	    		}
+	    	    	}
+	    	    }, {
+	    	    	name:'剩余容量',
+	    	    	type:'bar',
+	    	    	barMaxWidth: '40',
+	    	    	barCategoryGap :'40%',
+	    	    	stack: '总量',
+	    	    	data:yAxis2,
+	    	        itemStyle: {
+	    	        	normal: {
+	    	        		barBorderRadius:[5,5,5,5],
+	    	        		color: 'transparent',
+	    	        		label: {
+	    	        			show: false,
+	    	        			position: 'inside',
+	    	        			rotate:$scope.rotate,
+	    	        			formatter: function(params) {
+	    	        				return yAxisShow2[params.dataIndex];
+	    		        		},
+	    		        		color: '#000',
+				        		fontWeight: 'bold'
+	    	        		}            
+	    	        	}
+	    	        }
+	    	    }]
+	    	};
+	    		
+	    	var option1 = {
+	        	tooltip : {
+	        		trigger: 'axis',
+	        	    formatter: function (params) { 
+	        	        var res = params[0].name; 
+	        	        if(params[2].data>0){
+	        	        	res += '<br/>'+ params[1].seriesName + ' : ' + params[1].data; 
+	        	        	res += '<br/>'+ params[2].seriesName + ' : ' + params[2].data;
+	        	        	return res;
+	        	        }else{
+	        	        	res += '<br/>'+ params[1].seriesName + ' : ' + params[0].data; 
+	        	        	res += '<br/>'+ params[2].seriesName + ' : 0' ;
+	        	        	return res;
+	        	        }
+	        	    },
+	        	    textStyle:{
+	            		align:'left'
+	        	    }
+	        	},		
+	        	grid: {
+	    			top:'15',
+	    			left: '1%',
+	        		right: '1%',
+	    			bottom: '5%',
+	    			containLabel: true
+	    		},
+	        	calculable : false,
+	        	xAxis : [{
+	        	    type : 'category',
+	        	    data : xAxis,
+	        	    axisLabel:{
+	        	    	interval: 0,
+	        	    	fontSize:12,
+	                    lineHeight: 14,
+		        		fontFamily:'Microsoft YaHei, Arial',
+		        		fontWeight: 'bold',
+		        		color:'#000',
+	        	        formatter:function(params){
+	        	        	var newParamsName = "";// 最终拼接成的字符串
+	        	            var paramsNameNumber = params.length;// 实际标签的个数
+	        	            var provideNumber = $scope.provideNumber;// 每行能显示的字的个数
+	        	            var rowNumber = Math.ceil(paramsNameNumber / provideNumber);// 换行的话，需要显示几行，向上取整
+	        	            if (paramsNameNumber > provideNumber) {
+	        	            	for (var p = 0; p < rowNumber; p++) {
+	        	                    var tempStr = "";// 表示每一次截取的字符串
+	        	                    var start = p * provideNumber;// 开始截取的位置
+	        	                    var end = start + provideNumber;// 结束截取的位置
+	        	                    if (p == rowNumber - 1) {
+	        	                        tempStr = params.substring(start, paramsNameNumber);
+	        	                    } else {
+	        	                        tempStr = params.substring(start, end) + "\n";
+	        	                    }
+	        	                    newParamsName += tempStr;// 最终拼成的字符串
+	        	                }
+	        	            } else {
+	        	                newParamsName = params;
+	        	            }
+	        	            return newParamsName;
+	        	        }
+	        	    },
+	        	    axisTick:{
+	        	    	show:false
+	        	    },
+	        	    axisLine:{
+	        	    	lineStyle:{
+	        	    		color:'#999'
+	        	    	}
+	        	    }
+	       		}],
+	        	yAxis : [{
+        			show:false,
+        	    	axisLabel:{
+        	    		show:false,
+        	    		fontSize:1,
+        	    		margin :0,
+        	    		width:1
+        	    	}
+        		}],
+	        	series : [ {
+	       			name: '总座位',
+	        	    type: 'bar',
+	        	    barMaxWidth: '40',
+	        	    barGap: '-100%',
+	        	    data:yAxis0,
+	        	    itemStyle: {
+	        	   		normal: {
+	        	    		barBorderRadius:[5,5,5,5],
+	        	    		color: function(params) {
+	           	    			if(msgAxis[params.dataIndex]=='y'){
+	           	    				return 'RGBA(255,128,0,0.2)';
+	           	    			}else{
+	           	    				return 'RGBA(51,126,255,0.2)';
+	           	    			}
+	           	    		},  
+	        	    		label: {
+	        	    			show: true,
+	        	    			position: 'top',
+	        	    			distance: 15,
+	        	    			verticalAlign: 'middle',
+	        	    			rotate:$scope.rotate,
+	        	    			rich: {
+	        	    				a: {
+	        	    					fontSize:12,
+	        	        	            lineHeight: 14,
+	        	        	            fontFamily:'Microsoft YaHei, Arial',
+	        	        	            color:'#000',
+	        	        	            fontWeight: 'bold'
+	        	    				},
+	        	        	        b:{
+	        	        	        	fontSize:12,
+	        	        	            lineHeight: 14,
+	        	        	            fontFamily:'Microsoft YaHei, Arial',
+	        	        	            color:'#000',
+	        	        	            fontWeight: 'bold'
+	        	        	       }
+	        	    			},			
+	        	    			formatter: function(params) {
+	        	    				if(msgAxis[params.dataIndex]=='y'){
+	        	    					return '{b|'+yAxisShow0[params.dataIndex]+'}';
+	        	    				}else{
+	        	    					return '{a|'+yAxisShow0[params.dataIndex]+'}';
+	        	    				}			    	
+	        	    			}
+	        	    		}
+	        	   		}
+	        		}
+	       		},{
+	        		name:'当前人数',
+	        		type:'bar',
+	        		barMaxWidth: '40',
+	        		stack: '总量',
+	        		data:yAxis1,
+	        		itemStyle: {
+	        			normal: {
+	        				barBorderRadius:[5,5,5,5],
+	        				color: function(params) {
+	            				if(msgAxis[params.dataIndex]=='y'){
+	            					return 'RGBA(255,128,0,0.8)';
+	            				}else{
+	            					return 'RGBA(51,126,255,1)';
+	            				}
+	        				},              
+	        	    		label: {
+	        	    			show: false,
+	        	    			rotate:$scope.rotate,
+	        	    			position: 'inside',
+	        	    			formatter: function(params) {
+	        	    				return yAxisShow1[params.dataIndex];
+	        	    			},
+	        	    			color: '#fff',
+	        	    			fontWeight: 'bold'
+	        	       		}
+	        			}
+	        		}
+	        	}, {
+	        		name:'剩余容量',
+	        		type:'bar',
+	        		barMaxWidth: '40',
+	        		barCategoryGap :'40%',
+	        		stack: '总量',
+	        		data:yAxis2,
+	        	    itemStyle: {
+	        	   		normal: {
+	        	    		barBorderRadius:[5,5,5,5],
+	        	    		color: 'transparent',
+	        	    		label: {
+	        	    			show: false,
+	        	    			rotate:$scope.rotate,
+	        	    			position: 'inside',
+	        	    			formatter: function(params) {
+	        	    				return yAxisShow2[params.dataIndex];
+	        	    			},
+	        	    			color: '#000',
+	        	    			fontWeight: 'bold'
+	        	    		}                        
+	        	        }
+	        	    }
+	        	}]
+	    	};
+	    			
+	    	var myChart = document.getElementById("lifeIndexCarteenV");
+	        var count = 0;//定义一个变量用于判断
+	    	myChart = echarts.init(myChart);
+	    		
+	    	clearInterval(chartTimerID);
+	    	chartTimerID = setInterval(function(){
+	    		if(count%2==0){
+	    			myChart.setOption(option0,true);      //交替setOption
+	    		}else{
+	    			myChart.setOption(option1,true);
+	    		}
+	    		count+=1;
+	    	},1000);
+	    });
+	};
+		
+	$scope.retrClassRoomInfos = function(){
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/classroomQuery/retrClassRoomInfos.do'
+	    }).success(function(response){
+	        var success = response.success;
+	        if(true==success){
+	        	$scope.classrooms = response.rows;
+	        		
+	        	var xAxis=[];
+        		var yAxis0=[];
+        		var yAxis1=[];
+        		var yAxis2=[];
+        			
+        		for(var i=0;i<$scope.classrooms.length;i++){
+        			var name = $scope.classrooms[i].buildingName;
+        			var total = $scope.classrooms[i].classroomSum;
+        			if(total>0){
+        				var free = $scope.classrooms[i].classroomFree;
+            			var occupy = total - free;
+            				
+            			xAxis.push(name);
+            			yAxis0.push(total);
+            				
+            			if(occupy==0){
+            				yAxis1.push('-');
+            			}else{
+            				yAxis1.push(occupy);
+            			}
+            				
+            			if(free==0){
+            				yAxis2.push('-');
+            			}else{
+            				yAxis2.push(free);
+            			}
+        			}
+        		}
+        			
+        		setTimeout(function (){
+	        		var myChart = document.getElementById("lifeIndexClassRoomV");
+	        		var option = {
+		        		tooltip : {
+		        			trigger: 'axis',
+		        			formatter:  function (params) { 
+	    	        			var res = params[0].name; 
+	    	        			res += '<br/>'+ params[0].seriesName + ' : ' + params[0].data;
+    	        				res += '<br/>'+ params[1].seriesName + ' : ' + params[1].data; 
+    	        				res += '<br/>'+ params[2].seriesName + ' : ' + params[2].data;
+    	        				return res;
+	    	        		},
+		    	        	textStyle:{
+		                    	align:'left'
+		    	        	}
+		        		},
+		        		grid: {
+		        			top:'15',
+		        			left: '1%',
+		            		right: '1%',
+		        			bottom: '5%',
+		        			containLabel: true
+		        		},
+		        		calculable : false,
+		        		xAxis : [{
+		        			type : 'category',
+		        			data : xAxis,
+		        			axisLabel:{
+		        				interval: 0,
+	                            rich: {
+	                            	a: {
+	                                	fontSize:12,
+	                                    lineHeight: 14,
+	                                    fontFamily:'Microsoft YaHei, Arial',
+				        			    color:'#000',
+				        			    fontWeight: 'bold'
+	                                }
+	                            },
+	                            formatter:function(params){
+	                                var newParamsName = "";// 最终拼接成的字符串
+	                                var paramsNameNumber = params.length;// 实际标签的个数
+	                                    
+	                                var provideNumber = $scope.provideNumber;// 每行能显示的字的个数
+	                                var rowNumber = Math.ceil(paramsNameNumber / provideNumber);// 换行的话，需要显示几行，向上取整
+	                               	if (paramsNameNumber > provideNumber) {
+	                                        /** 循环每一行,p表示行 */
+	                                	for (var p = 0; p < rowNumber; p++) {
+	                                   		var tempStr = "";// 表示每一次截取的字符串
+	                                        var start = p * provideNumber;// 开始截取的位置
+	                                        var end = start + provideNumber;// 结束截取的位置
+	                                        // 此处特殊处理最后一行的索引值
+	                                        if (p == rowNumber - 1) {
+	                                        	// 最后一次不换行
+	                                            tempStr = params.substring(start, paramsNameNumber);
+	                                        } else {
+	                                            // 每一次拼接字符串并换行
+	                                            tempStr = params.substring(start, end) + "\n";
+	                                        }
+	                                        newParamsName += tempStr;// 最终拼成的字符串
+	                                   	}
+	                                } else {
+	                               		// 将旧标签的值赋给新标签
+	                                    newParamsName = params;
+	                                }
+	                                //将最终的字符串返回
+	                                return '{a|'+newParamsName+'}';
+	                            }
+		        			},
+		        			axisTick:{
+		                        show:false
+		                    },
+		        			axisLine:{
+		                    	lineStyle:{
+		                        	color:'#999'
+		                        }
+		                    }
+		        		}],
+		        		yAxis : [{
+		        			show:false,
+		        	    	axisLabel:{
+		        	    		show:false,
+		        	    		fontSize:1,
+		        	    		margin :0,
+		        	    		width:1
+		        	    	}		
+		        		}],
+		        		series : [ {
+		                	name: '总教室',
+		                    type: 'bar',
+		                    barMaxWidth: '40',
+		                    barGap: '-100%',
+		                    data:yAxis0,
+		                    itemStyle: {
+			        			normal: {
+			        				barBorderRadius:[5,5,5,5],
+			        				color:'RGBA(76,175,80,0.2)',
+			        				label: {
+			        					show: true,
+					        			position: 'top',
+					        			distance: 15,
+			    	        			verticalAlign: 'middle',
+			    	        			rotate:$scope.rotate,
+			    	        			textStyle: {
+					        			    color:'#000',
+					        			    fontSize: 12,
+						        			fontStyle: 'normal',
+					        			    fontWeight: 'bold',
+					        			    fontFamily:'Microsoft YaHei, Arial'
+				        			    }
+			        				}
+			        			}
+			        		}
+		             	},{
+		        			name:'已占用',
+		        			type:'bar',
+		        			barMaxWidth: '40',
+		        			stack: '总量',
+		        			data:yAxis1,
+		        			itemStyle: {
+		        				normal: {
+		        			    	barBorderRadius:[5,5,5,5],
+		        			    	color:'RGBA(76,175,80,1)',
+		        		            label: {
+				        			    show: true,
+				        			    position: 'inside',
+				        			    rotate:$scope.rotate,
+				        			    textStyle: {
+				        			    	color:'#fff',
+				        			    	fontFamily:'Microsoft YaHei, Arial',
+				        			    	fontSize: 12,
+					        			    fontStyle: 'normal',
+				        			    	fontWeight: 'bold'
+			        			    	}
+			        			    }
+		        			    }
+		        			}
+		        		}, {
+		        			name:'未占用',
+		        			type:'bar',
+		        			barMaxWidth: '40',
+		        			barCategoryGap :'40%',
+		        			stack: '总量',
+		        			data:yAxis2,
+			        		itemStyle: {
+			        			normal: {
+			        				barBorderRadius:[5,5,5,5],
+			        				color:'transparent',
+			        				label: {
+			        					show: true,
+					        			position: 'inside',
+					        			rotate:$scope.rotate,
+					        			textStyle: {
+					        				color:'#000',
+					        			    fontFamily:'Microsoft YaHei, Arial',
+					        			    fontSize: 12,
+						        			fontStyle: 'normal',
+					        			    fontWeight: 'bold'
+				        			    }
+			        				}
+			        			}
+			        		}
+		        		}]
+		        	};
+	        		myChart = echarts.init(myChart);
+	        		myChart.setOption(option, true);
+	        			
+        		},800);
+	        }else{
+	        	$scope.errorMsg = response.message||response.errMsg;
+	        }
+	  	}).error(function(e, code){
+	        throw(code);
+	    });
+	};
+			
+	dataTimerID=setInterval(function(){
+		$scope.retrClassRoomInfos();
+		$scope.retrCarteenInfos();
+	},60000);
+	
+	setTimeout(function (){  
+		window.onresize = function () {
+	        var win_width = $(window).width();
+	        if(win_width<=640){
+	    		$scope.provideNumber = 1;
+	    		$scope.rotate = 90;
+	    	}else if(win_width<=1000){
+	    		$scope.provideNumber = 2;
+	    		$scope.rotate = 0;
+	    	}else {
+	    		$scope.provideNumber = 3;
+	    		$scope.rotate = 0;
+	    	}
+	        	
+	    	var myChart0 = echarts.getInstanceById($("#lifeIndexCarteenV").attr("_echarts_instance_"));
+	        var myChart2 = echarts.getInstanceById($("#lifeIndexClassRoomV").attr("_echarts_instance_"));
+	        if(null!=myChart0){
+		        myChart0.resize();
+		    }
+		    if(null!=myChart2){
+		        myChart2.resize();
+		    }
+	    }; 
+	},200);
+		
+	
+	//页面离开时，清空所有定时器
+	$scope.$on("$destroy", function() {
+		clearInterval(chartTimerID);
+		clearInterval(dataTimerID);
+	});
+		
+    //初始化函数
+    var init = function() {
+        var win_width = $(window).width();
+        if(win_width<=640){
+    		$scope.provideNumber = 1;
+    		$scope.rotate = 90;
+    	}else if(win_width<=1000){
+    		$scope.provideNumber = 2;
+    		$scope.rotate = 0;
+    	}else {
+    		$scope.provideNumber = 3;
+    		$scope.rotate = 0;
+    	}
+    		
+        $scope.retrClassRoomInfos();
+        $scope.retrCarteenInfos();
+    };
+    init();
+}]);

@@ -151,10 +151,10 @@ class AppFacade:
 
     # ─── 同步 / 统计 ──────────────────────────────────────────
 
-    def sync_from_teaching_site(self, username: str, password: str):
+    def sync_from_teaching_site(self, username: str, password: str, otp_code: str = ""):
         if self.sync_manager is None:
             raise RuntimeError("sync_manager not wired into AppFacade")
-        return self.sync_manager.sync_from_teaching_site(username, password)
+        return self.sync_manager.sync_from_teaching_site(username, password, otp_code=otp_code)
 
     def get_statistics(self):
         if self.statistics_manager is None:

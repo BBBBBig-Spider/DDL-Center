@@ -1,0 +1,67 @@
+var courseIntroCtrl = angular.module('dc.controller.courseIntro.courseIntroCtrl', []);	
+courseIntroCtrl.controller("courseIntroController",['$scope','$http',function($scope,$http){
+	$scope.errorMsg = "";
+	$scope.deptList=null;
+	$scope.courseTypeList=null;
+	$scope.courses=null;
+	$scope.courseCount=0;
+	$scope.getDeptList = function(){
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/common/util/retrJxDeptList.do'
+	    }).success(function(response){
+	        if(response.success==true){
+	        	$scope.deptList = response.rows;
+	        }
+	    }).error(function(){
+	    	$scope.deptList = null;
+	        $scope.errorMsg="服务器没有响应";
+	    });
+	};
+	
+	$scope.ciCourseType = "0";
+	$scope.retrCourseList = function(){
+		if(""!=$scope.ciDept){
+			$http({
+		    	method:'POST',
+		        dataType: "json",
+		        url:'/publicQuery/ctrl/common/courseQuery/retrCourseList.do',
+		        data:{
+		        	courseId:$scope.ciNo,
+		            setupFor:$scope.ciStuType,
+		            deptId:$scope.ciDept,
+		            courseName:$scope.ciName,
+		            courseLevel:$scope.ciCourseType,
+		            credits:$scope.ciCredit
+		        },
+		        headers:{
+		        	'Content-Type':'application/json'
+		        }
+		   	}).success(function(response){
+		        if(response.success==true){
+		        	$scope.courses = response.rows;
+		        	$scope.courseCount = response.results;
+		        	$scope.errorMsg=response.msg
+		        }else{
+		        	$scope.courses = null;
+		        	$scope.courseCount = 0;
+		        	$scope.errorMsg=response.msg
+		        }
+		    }).error(function(){
+		        $scope.errorMsg="服务器没有响应";
+		    });
+		}else{
+			$scope.courses = null;
+        	$scope.courseCount = 0;
+			$scope.errorMsg="请输入必要的查询条件";
+		}
+	};
+		
+    //初始化函数
+    var init = function() {
+        $scope.getDeptList();
+    };
+    init();
+}]);
