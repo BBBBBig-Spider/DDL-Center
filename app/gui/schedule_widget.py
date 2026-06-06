@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.gui.add_schedule_dialog import AddCourseDialog
+from app.gui.import_schedule_dialog import ImportScheduleDialog
 from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
 from app.config import SEMESTER_START
 
@@ -163,6 +164,12 @@ class ScheduleWidget(QWidget):
         add_button.clicked.connect(self.on_add_course_clicked)
         top_bar.addWidget(add_button)
 
+        import_button = QPushButton("导入课表")
+        import_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        import_button.setStyleSheet(secondary_button_style())
+        import_button.clicked.connect(self.on_import_schedule_clicked)
+        top_bar.addWidget(import_button)
+
         week_label = QLabel("选择周次:")
         week_label.setStyleSheet(f"font-size: 13px; color: {TEXT}; background-color: transparent;")
         top_bar.addWidget(week_label)
@@ -248,6 +255,11 @@ class ScheduleWidget(QWidget):
                     print(f"[GUI] facade schedule create failed: {exc}")
             if not saved_to_facade:
                 self.custom_slots.append(new_slot)
+            self.refresh_schedule()
+
+    def on_import_schedule_clicked(self):
+        dialog = ImportScheduleDialog(facade=self.facade, parent=self)
+        if dialog.exec() == ImportScheduleDialog.DialogCode.Accepted:
             self.refresh_schedule()
 
     def set_gui_task_arrangements(self, arrangements) -> None:

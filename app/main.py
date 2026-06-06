@@ -53,6 +53,8 @@ def build_facade():
         alert_manager=alert_manager,
         statistics_manager=statistics_manager,
         setting_repository=setting_repository,
+        schedule_manager=schedule_manager,
+        course_manager=course_manager,
     )
     sync_manager = SyncManager(
         auth_client=AuthClient(),
