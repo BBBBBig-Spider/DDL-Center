@@ -52,14 +52,24 @@ class DatabaseManager:
         if not self.schema_path.exists():
             raise FileNotFoundError(f"schema.sql not found at: {self.schema_path}")
 
-        # 使用 Pathlib 的 read_text() 更现代、更简洁，自动处理文件打开与关闭
         schema_sql: str = self.schema_path.read_text(encoding="utf-8")
 
         conn: sqlite3.Connection = self.get_connection()
-        
-        # 使用上下文管理器自动处理 commit 和 rollback
+
         with conn:
             conn.executescript(schema_sql)
+
+        self._run_migrations(conn)
+
+    def _run_migrations(self, conn: sqlite3.Connection) -> None:
+        """Apply incremental schema migrations that cannot be expressed as CREATE IF NOT EXISTS."""
+        cursor = conn.execute("PRAGMA table_info(tasks)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        if "is_hidden" not in existing_cols:
+            with conn:
+                conn.execute(
+                    "ALTER TABLE tasks ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0"
+                )
 
     def close(self) -> None:
         """

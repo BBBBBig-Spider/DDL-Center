@@ -161,6 +161,17 @@ class AppFacade:
             raise RuntimeError("statistics_manager not wired into AppFacade")
         return self.statistics_manager.get_statistics()
 
+    def purge_overdue_tasks(self) -> int:
+        return self.task_manager.purge_overdue_tasks()
+
+    def find_or_create_course_by_name(self, name: str) -> int | None:
+        if self.course_manager is None:
+            return None
+        try:
+            return self.course_manager.find_or_create_by_name(name)
+        except Exception:
+            return None
+
     # ─── AI 相关 ──────────────────────────────────────────────
 
     def ai_decompose_task(self, description: str, due_time: datetime) -> list[dict]:

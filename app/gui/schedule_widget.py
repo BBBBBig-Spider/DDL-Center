@@ -497,8 +497,20 @@ class ScheduleWidget(QWidget):
         weekday = due_time.weekday() + 1
         if not 1 <= weekday <= 7:
             return None
-        row, _span = self._slot_to_grid_position({"start_time": due_time.time(), "end_time": due_time.time()})
+        row = self._time_to_grid_row(due_time.time())
         return row, weekday
+
+    def _time_to_grid_row(self, t: time) -> int:
+        """Return the 1-based grid row for a clock time, snapping to the nearest period."""
+        for index, (_label, period_start, period_end) in enumerate(self.PERIODS, start=1):
+            if period_start <= t <= period_end:
+                return index
+        # Between periods or outside: find the last period whose start <= t
+        best = 1
+        for index, (_label, period_start, _period_end) in enumerate(self.PERIODS, start=1):
+            if period_start <= t:
+                best = index
+        return best
 
     def _is_exact_period_slot(self, slot):
         start_time = self._coerce_time(get_field(slot, "start_time"))

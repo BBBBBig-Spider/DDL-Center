@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.gui.task_editor_dialog import TaskEditorDialog
-from app.gui.theme import BORDER, INK, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT
+from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT
 
 
 def get_field(obj, key, default=None):
@@ -51,6 +51,13 @@ class TaskCardWidget(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(10)
+
+        # Batch-mode checkbox (hidden until batch mode is active)
+        self.batch_select_cb = QCheckBox()
+        self.batch_select_cb.setVisible(False)
+        self.batch_select_cb.setFixedWidth(18)
+        self.batch_select_cb.stateChanged.connect(self._on_batch_check_changed)
+        layout.addWidget(self.batch_select_cb)
 
         self.cb_status = QCheckBox()
         self.cb_status.setChecked(self.status_val == "done")
@@ -168,9 +175,29 @@ class TaskCardWidget(QFrame):
         )
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and hasattr(self.parent_widget, "on_task_card_selected"):
-            self.parent_widget.on_task_card_selected(self)
+        if event.button() == Qt.MouseButton.LeftButton:
+            pw = self.parent_widget
+            if getattr(pw, "batch_mode", False):
+                self.batch_select_cb.setChecked(not self.batch_select_cb.isChecked())
+            elif hasattr(pw, "on_task_card_selected"):
+                pw.on_task_card_selected(self)
         super().mousePressEvent(event)
+
+    def set_batch_mode(self, enabled: bool, selected_ids: set | None = None) -> None:
+        self.batch_select_cb.setVisible(enabled)
+        if enabled:
+            task_id = self._get_field("id")
+            checked = task_id in (selected_ids or set())
+            self.batch_select_cb.blockSignals(True)
+            self.batch_select_cb.setChecked(checked)
+            self.batch_select_cb.blockSignals(False)
+        self.update_card_style()
+
+    def _on_batch_check_changed(self, state):
+        is_checked = state == Qt.CheckState.Checked.value
+        task_id = self._get_field("id")
+        if hasattr(self.parent_widget, "on_batch_card_check_changed"):
+            self.parent_widget.on_batch_card_check_changed(task_id, is_checked)
 
     def on_checkbox_changed(self, state):
         is_checked = state == Qt.CheckState.Checked.value
@@ -280,6 +307,8 @@ class TaskListWidget(QWidget):
         self.facade = facade
         self.task_manager = getattr(facade, "task_manager", facade)
         self.selected_task_id = None
+        self.batch_mode = False
+        self.batch_selected: set = set()
         self.init_ui()
         self.refresh_display()
 
@@ -335,8 +364,87 @@ class TaskListWidget(QWidget):
         )
         self.status_combo.currentIndexChanged.connect(self.refresh_current_view)
         self.top_layout.addWidget(self.status_combo)
+
         self.top_layout.addStretch()
+
+        self.btn_purge = QPushButton("清理逾期")
+        self.btn_purge.setStyleSheet(
+            f"QPushButton {{ background-color: #FFFFFF; color: #B8860B; border: 1px solid #B8860B; "
+            f"border-radius: 4px; padding: 6px 12px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: #FFF8E6; }}"
+        )
+        self.btn_purge.clicked.connect(self._purge_overdue)
+        self.top_layout.addWidget(self.btn_purge)
+
+        self.btn_batch = QPushButton("批量操作")
+        self.btn_batch.setStyleSheet(
+            f"QPushButton {{ background-color: #FFFFFF; color: {TEXT}; border: 1px solid {BORDER}; "
+            f"border-radius: 4px; padding: 6px 12px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: #F0F0F0; }}"
+            f"QPushButton:checked {{ background-color: {PKU_GOLD}; color: #FFFFFF; border-color: {PKU_GOLD}; }}"
+        )
+        self.btn_batch.setCheckable(True)
+        self.btn_batch.clicked.connect(self.toggle_batch_mode)
+        self.top_layout.addWidget(self.btn_batch)
+
         self.main_layout.addLayout(self.top_layout)
+
+        # Batch toolbar (hidden until batch mode is active)
+        self.batch_toolbar = QFrame()
+        self.batch_toolbar.setObjectName("BatchToolbar")
+        self.batch_toolbar.setStyleSheet(
+            f"QFrame#BatchToolbar {{ background-color: #FFF8E6; border: 1px solid {PKU_GOLD}; "
+            "border-radius: 6px; padding: 2px; }}"
+            f"QFrame#BatchToolbar QLabel {{ background-color: transparent; color: {INK}; }}"
+            f"QFrame#BatchToolbar QCheckBox {{ background-color: transparent; color: {INK}; }}"
+        )
+        batch_row = QHBoxLayout(self.batch_toolbar)
+        batch_row.setContentsMargins(12, 6, 12, 6)
+        batch_row.setSpacing(10)
+
+        self.batch_select_all_cb = QCheckBox("全选")
+        self.batch_select_all_cb.setTristate(True)
+        self.batch_select_all_cb.setStyleSheet(f"font-size: 13px; color: {INK};")
+        self.batch_select_all_cb.stateChanged.connect(self._on_select_all_changed)
+        batch_row.addWidget(self.batch_select_all_cb)
+
+        batch_row.addStretch()
+
+        self.batch_count_label = QLabel("已选 0 项")
+        self.batch_count_label.setStyleSheet(f"font-size: 12px; color: #8A5A00;")
+        batch_row.addWidget(self.batch_count_label)
+
+        self.btn_batch_done = QPushButton("标记完成")
+        self.btn_batch_done.setStyleSheet(
+            "QPushButton { background-color: #6B7D3A; color: white; border: none; border-radius: 4px; "
+            "padding: 5px 14px; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #56652E; }"
+            "QPushButton:disabled { background-color: #C0C0C0; }"
+        )
+        self.btn_batch_done.clicked.connect(self._batch_mark_done)
+        batch_row.addWidget(self.btn_batch_done)
+
+        self.btn_batch_delete = QPushButton("删除")
+        self.btn_batch_delete.setStyleSheet(
+            f"QPushButton {{ background-color: {PKU_RED}; color: white; border: none; border-radius: 4px; "
+            f"padding: 5px 14px; font-size: 12px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background-color: {PKU_RED_DARK}; }}"
+            "QPushButton:disabled { background-color: #C0C0C0; }"
+        )
+        self.btn_batch_delete.clicked.connect(self._batch_delete)
+        batch_row.addWidget(self.btn_batch_delete)
+
+        btn_exit_batch = QPushButton("退出批量")
+        btn_exit_batch.setStyleSheet(
+            f"QPushButton {{ background-color: #FFFFFF; color: {TEXT}; border: 1px solid {BORDER}; "
+            "border-radius: 4px; padding: 5px 12px; font-size: 12px; }"
+            "QPushButton:hover { background-color: #F0F0F0; }"
+        )
+        btn_exit_batch.clicked.connect(self.toggle_batch_mode)
+        batch_row.addWidget(btn_exit_batch)
+
+        self.batch_toolbar.hide()
+        self.main_layout.addWidget(self.batch_toolbar)
 
         from app.gui.course_board_widget import CourseBoardWidget
         from app.gui.time_line_widget import TimelineWidget
@@ -404,6 +512,148 @@ class TaskListWidget(QWidget):
         self.right_sidebar_layout.addWidget(self.recommend_panel, stretch=1)
         self.main_container_layout.addLayout(self.right_sidebar_layout)
 
+    def _purge_overdue(self) -> None:
+        tasks = self._load_tasks({})
+        overdue = [t for t in tasks if self._coerce_datetime_static(get_field(t, "due_time")) and
+                   self._coerce_datetime_static(get_field(t, "due_time")) < datetime.now() and
+                   get_field(t, "status", "todo") != "done"]
+        if not overdue:
+            QMessageBox.information(self, "清理逾期", "当前没有未完成的逾期任务。")
+            return
+        reply = QMessageBox.question(
+            self, "清理逾期任务",
+            f"找到 {len(overdue)} 项未完成的逾期任务。\n"
+            "同步任务将隐藏，手动任务将永久删除。确认清理？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if self.facade and hasattr(self.facade, "purge_overdue_tasks"):
+            try:
+                count = self.facade.purge_overdue_tasks()
+                QMessageBox.information(self, "清理完成", f"已清理 {count} 项逾期任务。")
+            except Exception as exc:
+                QMessageBox.critical(self, "清理失败", str(exc))
+        self.refresh_current_view()
+
+    @staticmethod
+    def _coerce_datetime_static(value):
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    def toggle_batch_mode(self) -> None:
+        self.batch_mode = not self.batch_mode
+        self.batch_selected.clear()
+        self.btn_batch.setChecked(self.batch_mode)
+        self.batch_toolbar.setVisible(self.batch_mode)
+        # Reset select-all checkbox without triggering its signal
+        self.batch_select_all_cb.blockSignals(True)
+        self.batch_select_all_cb.setChecked(False)
+        self.batch_select_all_cb.blockSignals(False)
+        self._update_batch_toolbar()
+        # Apply batch mode to all currently displayed cards
+        for index in range(self.list_layout.count()):
+            item = self.list_layout.itemAt(index)
+            widget = item.widget() if item else None
+            if isinstance(widget, TaskCardWidget):
+                widget.set_batch_mode(self.batch_mode, self.batch_selected)
+
+    def _update_batch_toolbar(self) -> None:
+        n = len(self.batch_selected)
+        self.batch_count_label.setText(f"已选 {n} 项")
+        has_selection = n > 0
+        self.btn_batch_done.setEnabled(has_selection)
+        self.btn_batch_delete.setEnabled(has_selection)
+        # Update select-all state without triggering signal
+        tasks = self._load_tasks(self.current_filters())
+        total = len(tasks)
+        self.batch_select_all_cb.blockSignals(True)
+        if total > 0 and n == total:
+            self.batch_select_all_cb.setCheckState(Qt.CheckState.Checked)
+        elif n > 0:
+            self.batch_select_all_cb.setCheckState(Qt.CheckState.PartiallyChecked)
+        else:
+            self.batch_select_all_cb.setCheckState(Qt.CheckState.Unchecked)
+        self.batch_select_all_cb.blockSignals(False)
+
+    def _on_select_all_changed(self, state) -> None:
+        # Partial → treat as "select all" so the user can click once to select all
+        select_all = state != Qt.CheckState.Unchecked.value
+        tasks = self._load_tasks(self.current_filters())
+        self.batch_selected.clear()
+        if select_all:
+            for task in tasks:
+                tid = self._get_task_id(task)
+                if tid is not None:
+                    self.batch_selected.add(tid)
+        for index in range(self.list_layout.count()):
+            item = self.list_layout.itemAt(index)
+            widget = item.widget() if item else None
+            if isinstance(widget, TaskCardWidget):
+                widget.set_batch_mode(True, self.batch_selected)
+        self._update_batch_toolbar()
+
+    def on_batch_card_check_changed(self, task_id, checked: bool) -> None:
+        if task_id is None:
+            return
+        if checked:
+            self.batch_selected.add(task_id)
+        else:
+            self.batch_selected.discard(task_id)
+        self._update_batch_toolbar()
+
+    def _batch_mark_done(self) -> None:
+        if not self.batch_selected:
+            return
+        ids = list(self.batch_selected)
+        count = len(ids)
+        reply = QMessageBox.question(
+            self, "批量标记完成",
+            f"确定将选中的 {count} 项任务标记为已完成吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        errors = []
+        for task_id in ids:
+            try:
+                self.facade.mark_task_done(task_id)
+            except Exception as exc:
+                errors.append(str(exc))
+        self.batch_selected.clear()
+        if errors:
+            QMessageBox.warning(self, "部分失败", f"以下错误发生：\n" + "\n".join(errors[:5]))
+        self.toggle_batch_mode()
+
+    def _batch_delete(self) -> None:
+        if not self.batch_selected:
+            return
+        ids = list(self.batch_selected)
+        count = len(ids)
+        reply = QMessageBox.question(
+            self, "批量删除",
+            f"确定删除选中的 {count} 项任务吗？此操作不可撤销。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        errors = []
+        for task_id in ids:
+            try:
+                self.facade.delete_task(task_id)
+            except Exception as exc:
+                errors.append(str(exc))
+        self.batch_selected.clear()
+        if errors:
+            QMessageBox.warning(self, "部分失败", f"以下错误发生：\n" + "\n".join(errors[:5]))
+        self.toggle_batch_mode()
+
     def on_task_card_selected(self, selected_card):
         for index in range(self.list_layout.count()):
             item = self.list_layout.itemAt(index)
@@ -442,6 +692,8 @@ class TaskListWidget(QWidget):
             if self.selected_task_id is not None and card._get_field("id") == self.selected_task_id:
                 card.is_selected = True
                 card.update_card_style()
+            if self.batch_mode:
+                card.set_batch_mode(True, self.batch_selected)
             self.list_layout.addWidget(card)
 
         self._sync_recommendation_selection(tasks)

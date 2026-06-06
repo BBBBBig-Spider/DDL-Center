@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TEXT NOT NULL,
     completed_at TEXT,
     raw_payload TEXT NOT NULL DEFAULT '',
+    is_hidden INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
     FOREIGN KEY (related_exam_id) REFERENCES exams(id) ON DELETE SET NULL
 );

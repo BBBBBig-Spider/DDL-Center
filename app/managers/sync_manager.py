@@ -118,41 +118,31 @@ class SyncManager:
             result.errors.append(f"{label}同步失败：{exc}")
 
     def _sync_tasks(self, tasks: list[Task], result: SyncResult) -> None:
+        now = datetime.now()
         for task in tasks:
             if not task.external_id:
                 continue
+            # Skip tasks that are already overdue at sync time
+            if task.due_time is not None and task.due_time < now:
+                continue
             payload = self._payload(task.raw_payload)
             task.course_id = self._ensure_course(payload, result)
-            old_record = self.sync_repository.get_record("ddl", task.external_id)
             raw_hash = self._hash_object(task)
             existing = self.task_repository.find_by_external_id(task.external_id)
 
-            if existing is None:
-                task.created_at = datetime.now()
-                task.updated_at = task.created_at
-                self.task_repository.add(task)
-                status = "new"
-                result.tasks_new += 1
-            elif old_record is not None and old_record.raw_hash == raw_hash:
-                status = "unchanged"
+            # Skip tasks that were previously synced from the teaching site
+            if existing is not None:
                 result.tasks_unchanged += 1
-                task.id = existing.id
-            elif existing.user_modified:
-                status = "unchanged"
-                result.tasks_unchanged += 1
-                task.id = existing.id
-            else:
-                task.id = existing.id
-                task.created_at = existing.created_at
-                task.updated_at = datetime.now()
-                task.status = existing.status
-                task.completed_at = existing.completed_at
-                task.user_modified = existing.user_modified
-                self.task_repository.update(task)
-                status = "updated"
-                result.tasks_updated += 1
+                continue
 
-            self._record("ddl", task.external_id, "task", task.id, raw_hash, status)
+            task.created_at = now
+            task.updated_at = now
+            self.task_repository.add(task)
+            result.tasks_new += 1
+            self._record("ddl", task.external_id, "task", task.id, raw_hash, "new")
+
+        # Physically remove hidden synced tasks whose due date is past (won't re-appear in future syncs)
+        self.task_repository.purge_hidden_overdue(now)
 
     def _sync_schedule(self, slots: list[ScheduleSlot], result: SyncResult) -> None:
         for slot in slots:

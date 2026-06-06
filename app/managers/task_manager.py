@@ -176,7 +176,8 @@ class TaskManager:
             raise ValueError(
                 f"order_by must be one of: {', '.join(sorted(self.VALID_ORDER_KEYS))}"
             )
-        tasks.sort(key=lambda t: getattr(t, order_by))
+        # Done tasks sorted to the bottom; within each group sort by the requested key
+        tasks.sort(key=lambda t: (t.status == "done", getattr(t, order_by)))
 
         return tasks
 
@@ -231,5 +232,29 @@ class TaskManager:
     def delete_task(self, task_id: int) -> None:
         if not self._is_int(task_id):
             raise TypeError("task_id must be int")
-        if not self.task_repository.delete(task_id):
+        task = self.task_repository.get_by_id(task_id)
+        if task is None:
             raise ValueError(f"task {task_id} not found")
+        if task.source == "sync":
+            # Soft-delete: keep the row so re-sync won't re-import it
+            if not self.task_repository.soft_delete(task_id):
+                raise ValueError(f"task {task_id} not found")
+        else:
+            if not self.task_repository.delete(task_id):
+                raise ValueError(f"task {task_id} not found")
+
+    def purge_overdue_tasks(self) -> int:
+        """清理所有未完成且已逾期的可见任务，返回清理数量。"""
+        now = datetime.now()
+        overdue = [
+            t for t in self.task_repository.list_all()
+            if t.due_time < now and t.status != "done"
+        ]
+        count = 0
+        for task in overdue:
+            if task.source == "sync":
+                self.task_repository.soft_delete(task.id)
+            else:
+                self.task_repository.delete(task.id)
+            count += 1
+        return count

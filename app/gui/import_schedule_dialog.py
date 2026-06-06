@@ -1,4 +1,4 @@
-"""Import schedule slots from a JSON file or pasted JSON text."""
+"""Import schedule slots from a JSON file, pasted JSON, or PKU Portal HTML."""
 from __future__ import annotations
 
 import json
@@ -55,7 +55,8 @@ class ImportScheduleDialog(QDialog):
         layout.addWidget(title)
 
         hint = QLabel(
-            "支持 JSON 格式。每条记录至少需要：title、weekday (1-7)、"
+            "支持 JSON 格式或北京大学门户课表 HTML。"
+            "JSON 每条记录至少需要：title、weekday (1-7)、"
             "start_time、end_time、start_week、end_week。"
         )
         hint.setWordWrap(True)
@@ -95,7 +96,7 @@ class ImportScheduleDialog(QDialog):
 
     def _load_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择课表 JSON 文件", "", "JSON 文件 (*.json);;所有文件 (*)"
+            self, "选择课表文件", "", "课表文件 (*.json *.html *.htm);;所有文件 (*)"
         )
         if not path:
             return
@@ -109,23 +110,22 @@ class ImportScheduleDialog(QDialog):
     def _do_import(self) -> None:
         raw = self.text_edit.toPlainText().strip()
         if not raw:
-            QMessageBox.warning(self, "内容为空", "请粘贴或加载课表 JSON 内容。")
-            return
-
-        # Parse JSON
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            QMessageBox.critical(self, "JSON 解析失败", f"格式错误：{exc}")
-            return
-
-        if not isinstance(data, list):
-            QMessageBox.critical(self, "格式错误", "顶层结构必须是 JSON 数组 [ … ]。")
+            QMessageBox.warning(self, "内容为空", "请粘贴或加载课表内容。")
             return
 
         if not self.facade or not hasattr(self.facade, "create_schedule_slot"):
             QMessageBox.critical(self, "无法导入", "当前 Facade 没有提供课表写入接口。")
             return
+
+        # Detect format: HTML vs JSON
+        if raw.lstrip().startswith("<"):
+            data = self._parse_html(raw)
+            if data is None:
+                return
+        else:
+            data = self._parse_json(raw)
+            if data is None:
+                return
 
         ok = 0
         errors: list[str] = []
@@ -151,4 +151,42 @@ class ImportScheduleDialog(QDialog):
 
         if ok > 0:
             self.accept()
-        # if all failed, keep dialog open so user can fix
+
+    def _parse_json(self, raw: str) -> list[dict] | None:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            QMessageBox.critical(self, "JSON 解析失败", f"格式错误：{exc}")
+            return None
+        if not isinstance(data, list):
+            QMessageBox.critical(self, "格式错误", "顶层结构必须是 JSON 数组 [ … ]。")
+            return None
+        return data
+
+    def _parse_html(self, raw: str) -> list[dict] | None:
+        try:
+            from app.parsers.portal_schedule_parser import parse_portal_html
+            data = parse_portal_html(raw)
+        except Exception as exc:
+            QMessageBox.critical(self, "HTML 解析失败", f"无法解析课表 HTML：{exc}")
+            return None
+        if not data:
+            QMessageBox.warning(self, "未识别课表", "未从 HTML 中解析出任何课程，请确认文件来自北大门户课表页面。")
+            return None
+
+        # Ensure a course record exists for each unique course name so
+        # it can be selected when creating tasks.
+        if self.facade and hasattr(self.facade, "find_or_create_course_by_name"):
+            course_id_map: dict[str, int] = {}
+            for slot in data:
+                name = slot.get("title", "").strip()
+                if name and name not in course_id_map:
+                    cid = self.facade.find_or_create_course_by_name(name)
+                    if cid is not None:
+                        course_id_map[name] = cid
+            for slot in data:
+                name = slot.get("title", "").strip()
+                if name in course_id_map:
+                    slot["course_id"] = course_id_map[name]
+
+        return data
