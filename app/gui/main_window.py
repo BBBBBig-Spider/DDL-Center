@@ -1,171 +1,241 @@
+from __future__ import annotations
+
 import sys
 
-from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QApplication
-from app.gui.task_list_widget import TaskListWidget
-from app.gui.schedule_widget import ScheduleWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
-class MainWindow(QMainWindow): 
-    def __init__(self, facade): 
+from app.gui.schedule_widget import ScheduleWidget
+from app.gui.settings_dialog import SettingsDialog
+from app.gui.statistics_window import StatisticsWindow
+from app.gui.sync_dialog import SyncDialog
+from app.gui.task_list_widget import TaskListWidget
+from app.gui.theme import BACKGROUND, BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, primary_button_style
+from app.gui.widgets.ai_briefing_panel import AIBriefingPanel
+from app.gui.widgets.ai_chat_panel import AIChatPanel
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, facade):
         super().__init__()
         self.facade = facade
-        self.setWindowTitle("DDL指挥中心")
-        self.resize(1000, 700)
+        self.nav_buttons: dict[str, QPushButton] = {}
 
+        self.setWindowTitle("DDL 指挥中心")
+        self.resize(1120, 760)
+        self._init_ui()
+        self._connect_signals()
+        self._switch_page("tasks")
+
+    def _init_ui(self) -> None:
         central_widget = QWidget()
+        central_widget.setStyleSheet(f"background-color: {BACKGROUND};")
         self.setCentralWidget(central_widget)
 
-        self.main_layout = QHBoxLayout(central_widget)
-        self.setup_sidebar()
+        root_layout = QHBoxLayout(central_widget)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+        root_layout.addWidget(self._build_sidebar())
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(12)
+
+        self.briefing_panel = AIBriefingPanel(facade=self.facade)
+        content_layout.addWidget(self.briefing_panel)
 
         self.content_area = QStackedWidget()
-        self.main_layout.addWidget(self.content_area, stretch = 4)
+        self.content_area.setStyleSheet(
+            f"""
+            QStackedWidget {{
+                background-color: #FFFFFF;
+                border: 1px solid {BORDER};
+                border-radius: 6px;
+            }}
+            """
+        )
+        content_layout.addWidget(self.content_area, stretch=1)
 
-        welcome_label = QLabel("欢迎来到DDL指挥中心！请选择左侧功能。🕷️")
-        self.content_area.addWidget(welcome_label)
+        self.task_list_page = TaskListWidget(facade=self.facade)
+        self.schedule_page = ScheduleWidget(facade=self.facade)
+        self.statistics_page = StatisticsWindow(facade=self.facade)
+        self.ai_page = self._build_ai_page()
+        self.sync_page = self._build_sync_page()
 
-        self.task_list_page = TaskListWidget(facade = self.facade)
-        self.content_area.addWidget(self.task_list_page)
+        self.pages = {
+            "tasks": self.task_list_page,
+            "schedule": self.schedule_page,
+            "statistics": self.statistics_page,
+            "ai": self.ai_page,
+            "sync": self.sync_page,
+        }
+        for page in self.pages.values():
+            self.content_area.addWidget(page)
 
-        self.schedule_page = ScheduleWidget(facade = self.facade)
-        self.content_area.addWidget(self.schedule_page)
-        self.ai_placeholder = QLabel("AI助手功能正在开发中，敬请期待！🤖")
-        self.content_area.addWidget(self.ai_placeholder)
+        root_layout.addWidget(content_widget, stretch=1)
 
-        self.connect_signals()
+    def _build_sidebar(self) -> QWidget:
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(178)
+        sidebar.setStyleSheet(
+            f"""
+            QFrame#sidebar {{
+                background-color: {PKU_RED_DARK};
+                border: none;
+            }}
+            QLabel {{
+                color: #FFFFFF;
+                background: transparent;
+            }}
+            QPushButton {{
+                background-color: transparent;
+                color: #D1D5DB;
+                border: none;
+                border-radius: 4px;
+                padding: 10px 12px;
+                text-align: left;
+                font-size: 14px;
+            }}
+            QPushButton:hover {{
+                background-color: {PKU_RED};
+                color: #FFFFFF;
+            }}
+            QPushButton[active="true"] {{
+                background-color: {PKU_GOLD};
+                color: #FFFFFF;
+                font-weight: 700;
+            }}
+            """
+        )
 
-    def setup_sidebar(self): 
-        sidebar_widget = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar_widget)
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(14, 16, 14, 16)
+        layout.setSpacing(8)
 
-        self.btn_schedule = QPushButton("🕒课表视图")
-        self.btn_tasks = QPushButton("📋任务列表")
-        self.btn_ai = QPushButton("🤖AI助手")
+        brand = QLabel("DDL 指挥中心")
+        brand.setStyleSheet("font-size: 16px; font-weight: 700; padding-bottom: 10px;")
+        layout.addWidget(brand)
 
-        sidebar_layout.addWidget(self.btn_schedule)
-        sidebar_layout.addWidget(self.btn_tasks)
-        sidebar_layout.addWidget(self.btn_ai)
+        self.nav_buttons["tasks"] = QPushButton("任务管理")
+        self.nav_buttons["schedule"] = QPushButton("课程表")
+        self.nav_buttons["statistics"] = QPushButton("进度统计")
+        self.nav_buttons["ai"] = QPushButton("AI 助手")
+        self.nav_buttons["sync"] = QPushButton("同步")
 
-        sidebar_layout.addStretch()
+        for button in self.nav_buttons.values():
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            layout.addWidget(button)
 
-        self.main_layout.addWidget(sidebar_widget, stretch = 1)
+        layout.addStretch()
+        status = QLabel("演示版 UI")
+        status.setStyleSheet("color: #F3D9D9; font-size: 12px;")
+        layout.addWidget(status)
+        return sidebar
 
-    def connect_signals(self):
-        self.btn_schedule.clicked.connect(lambda: self.content_area.setCurrentWidget(self.schedule_page))
-        self.btn_tasks.clicked.connect(lambda: self.content_area.setCurrentWidget(self.task_list_page))
-        self.btn_ai.clicked.connect(lambda: self.content_area.setCurrentWidget(self.ai_placeholder))
-    
-    def switch_to_task_list(self):
-        self.content_area.setCurrentWidget(self.task_list_page)
+    def _build_ai_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(12)
 
+        actions = QHBoxLayout()
+        title = QLabel("AI 助手")
+        title.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {INK};")
+        actions.addWidget(title)
+        actions.addStretch()
+
+        self.open_settings_button = QPushButton("AI 设置")
+        self.open_sync_button = QPushButton("同步教学网")
+        for button in [self.open_settings_button, self.open_sync_button]:
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setStyleSheet(primary_button_style())
+            actions.addWidget(button)
+        layout.addLayout(actions)
+
+        self.ai_chat_panel = AIChatPanel(facade=self.facade)
+        layout.addWidget(self.ai_chat_panel, stretch=1)
+        return page
+
+    def _build_sync_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(12)
+
+        title = QLabel("教学网同步")
+        title.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {INK};")
+        body = QLabel("真实网络同步由后端负责。GUI 只打开同步对话框，并显示 facade 返回的结果。")
+        body.setWordWrap(True)
+        body.setStyleSheet("font-size: 13px; color: #4B5563;")
+        open_button = QPushButton("打开同步窗口")
+        open_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_button.clicked.connect(self._open_sync_dialog)
+        open_button.setStyleSheet(primary_button_style() + "QPushButton { max-width: 140px; }")
+
+        layout.addWidget(title)
+        layout.addWidget(body)
+        layout.addWidget(open_button)
+        layout.addStretch()
+        return page
+
+    def _connect_signals(self) -> None:
+        self.nav_buttons["tasks"].clicked.connect(lambda: self._switch_page("tasks"))
+        self.nav_buttons["schedule"].clicked.connect(lambda: self._switch_page("schedule"))
+        self.nav_buttons["statistics"].clicked.connect(lambda: self._switch_page("statistics"))
+        self.nav_buttons["ai"].clicked.connect(lambda: self._switch_page("ai"))
+        self.nav_buttons["sync"].clicked.connect(lambda: self._switch_page("sync"))
+        self.open_settings_button.clicked.connect(self._open_settings)
+        self.open_sync_button.clicked.connect(self._open_sync_dialog)
+
+    def _switch_page(self, page_key: str) -> None:
+        page = self.pages[page_key]
+        self.content_area.setCurrentWidget(page)
+        self._set_active_button(page_key)
+        self._refresh_page(page)
+
+    def _set_active_button(self, active_key: str) -> None:
+        for key, button in self.nav_buttons.items():
+            button.setProperty("active", key == active_key)
+            button.style().unpolish(button)
+            button.style().polish(button)
+
+    def _refresh_page(self, page: QWidget) -> None:
+        if hasattr(self.briefing_panel, "refresh"):
+            self.briefing_panel.refresh()
+        if hasattr(page, "refresh_display"):
+            page.refresh_display()
+        elif hasattr(page, "refresh_schedule"):
+            page.refresh_schedule()
+        elif hasattr(page, "refresh"):
+            page.refresh()
+
+    def switch_to_task_list(self) -> None:
+        self._switch_page("tasks")
+
+    def _open_settings(self) -> None:
+        dialog = SettingsDialog(facade=self.facade, parent=self)
+        if dialog.exec() == SettingsDialog.DialogCode.Accepted and hasattr(self.briefing_panel, "refresh"):
+            self.briefing_panel.refresh()
+
+    def _open_sync_dialog(self) -> None:
+        dialog = SyncDialog(facade=self.facade, parent=self)
+        dialog.exec()
         if hasattr(self.task_list_page, "refresh_display"):
             self.task_list_page.refresh_display()
+        if hasattr(self.schedule_page, "refresh_schedule"):
+            self.schedule_page.refresh_schedule()
+        if hasattr(self.statistics_page, "refresh"):
+            self.statistics_page.refresh()
+        if hasattr(self.briefing_panel, "refresh"):
+            self.briefing_panel.refresh()
+
 
 if __name__ == "__main__":
-    from datetime import datetime
-    
-    # 1. 尝试导入真实后端组件
-    try:
-        from app.managers.app_facade import AppFacade
-        from app.managers.task_manager import TaskManager
-        from app.managers.alert_manager import AlertManager
-        from app.repositories.task_repository import TaskRepository
-        from app.database.database_manager import DatabaseManager
-        BACKEND_IMPORTS_OK = True
-    except ImportError:
-        BACKEND_IMPORTS_OK = False
+    from app.gui.demo_facade import DemoFacade
 
     app = QApplication(sys.argv)
-    real_facade = None
-
-    if BACKEND_IMPORTS_OK:
-        try:
-            real_db_manager = DatabaseManager()
-            try: real_db_manager.initialize_database()
-            except: pass
-
-            real_task_repo = TaskRepository(db_manager=real_db_manager)
-            try:
-                from app.repositories.alert_repository import AlertRepository
-                real_alert_repo = AlertRepository(db_manager=real_db_manager)
-            except:
-                real_alert_repo = None
-
-            real_task_manager = TaskManager(task_repository=real_task_repo)
-            real_alert_manager = AlertManager(task_repository=real_task_repo, alert_repository=real_alert_repo)
-
-            raw_facade = AppFacade(task_manager=real_task_manager, alert_manager=real_alert_manager)
-            
-            # 预跑核心方法，若无表或数据不完整，直接抛错进盾牌保底
-            test_res = raw_facade.list_tasks()
-            if not test_res or len(test_res) == 0:
-                raise RuntimeError("后端数据库为空或未初始化，启用高仿盾牌模式。")
-                
-            raw_facade.generate_alerts()
-            real_facade = raw_facade
-            print("✅ [联调成功] 真实后端完全健康，已硬连真Facade！")
-        except Exception as e:
-            print(f"⚠️ [联调提示] 真实后端无数据或存在Bug ({e})，启用本地全页面防爆盾模式。")
-            real_facade = None
-
-    # ─── 🛡️ 终极全页面适配防爆盾 ───
-    if real_facade is None:
-        class SafeFacadeBridge:
-            def __init__(self):
-
-                class SmartObject:
-                    def __init__(self, data):
-                        self.__dict__['_data'] = data
-                    def __getattr__(self, item):
-                        return self._data.get(item, None)
-                    def __getitem__(self, item):
-                        return self._data.get(item, None)
-                    def get(self, key, default=None):
-                        return self._data.get(key, default)
-                    def keys(self):
-                        return self._data.keys()
-
-                self.course_repository = SmartObject({
-                    "list_all": lambda: [
-                        SmartObject({"id": 101, "name": "高等数学(A)"}),
-                        SmartObject({"id": 102, "name": "编译原理"}),
-                        SmartObject({"id": 103, "name": "计算概论"})
-                    ]
-                })
-
-                self.raw_tasks = [
-                    {"id": 1, "title": "高数课后习题 1-5", "course_id": 101, "course_name": "高等数学(A)", "description": "周五前交", "due_time": datetime(2026, 6, 1, 23, 59), "estimated_hours": 2.0, "status": "todo", "priority": 1},
-                    {"id": 2, "title": "编译原理：词法分析器", "course_id": 102, "course_name": "编译原理", "description": "实验一", "due_time": datetime(2026, 6, 3, 12, 0), "estimated_hours": 8.0, "status": "doing", "priority": 2},
-                    {"id": 3, "title": "期中模拟上机测验", "course_id": 103, "course_name": "计算概论", "description": "真题练习", "due_time": datetime(2026, 6, 5, 18, 0), "estimated_hours": 3.0, "status": "done", "priority": 3},
-                    {"id": 4, "title": "高数阶段小测准备", "course_id": 101, "course_name": "高等数学(A)", "description": "复习前三章", "due_time": datetime(2026, 5, 29, 9, 0), "estimated_hours": 1.0, "status": "todo", "priority": 1}
-                ]
-                self.mock_tasks = [SmartObject(t) for t in self.raw_tasks]
-
-                self.raw_alerts = [
-                    {"level": "overdue", "kind": "deadline", "message": "高数作业已超期 3 小时！"},
-                    {"level": "urgent", "kind": "deadline", "message": "编译原理大作业仅剩 4 小时截止！"},
-                    {"level": "warning", "kind": "deadline", "message": "计算概论真题集还剩 2 天截止。"}
-                ]
-                self.mock_alerts = [SmartObject(a) for a in self.raw_alerts]
-
-            def list_tasks(self, filters=None):
-                # 智能过滤器，完美适配列表、时间轴、看板的过滤动作
-                if filters and "status" in filters and filters["status"]:
-                    return [t for t in self.mock_tasks if t.get("status") == filters["status"]]
-                if filters and "course_id" in filters and filters["course_id"]:
-                    return [t for t in self.mock_tasks if t.get("course_id") == int(filters["course_id"])]
-                return self.mock_tasks
-
-            def create_task(self, data): return 1
-            def update_task(self, t_id, data): pass
-            def delete_task(self, t_id): pass
-            def mark_task_done(self, t_id): pass
-
-            def generate_alerts(self):
-                # 抛出具有全兼容特性的百变提醒对象
-                return self.mock_alerts
-
-        real_facade = SafeFacadeBridge()
-
-    main_win = MainWindow(facade = real_facade)
-    main_win.show()
+    window = MainWindow(DemoFacade())
+    window.show()
     sys.exit(app.exec())

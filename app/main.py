@@ -1,5 +1,6 @@
 import os
 import sys
+import os
 
 from PySide6.QtWidgets import QApplication
 
@@ -8,6 +9,10 @@ from app.gui.main_window import MainWindow
 
 
 def build_facade():
+    if os.getenv("DDL_DEMO_MODE", "1") != "0":
+        print("Demo mode enabled. Using in-memory facade.")
+        return DemoFacade()
+
     try:
         from app.database.database_manager import DatabaseManager
         from app.managers.ai_assistant_manager import AIAssistantManager
