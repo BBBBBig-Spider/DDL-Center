@@ -80,6 +80,7 @@ class DDLMarkerWidget(QFrame):
 
 
 class ScheduleWidget(QWidget):
+    DEFAULT_DISPLAY_WEEKS = 20
     PERIODS = [
         ("第1节\n08:00-08:50", time(8, 0), time(8, 50)),
         ("第2节\n09:00-09:50", time(9, 0), time(9, 50)),
@@ -175,7 +176,7 @@ class ScheduleWidget(QWidget):
         top_bar.addWidget(week_label)
 
         self.week_combo = QComboBox()
-        for week in range(1, 17):
+        for week in range(1, self.DEFAULT_DISPLAY_WEEKS + 1):
             self.week_combo.addItem(f"第 {week} 周", week)
         self.week_combo.setStyleSheet(
             f"""
@@ -203,7 +204,7 @@ class ScheduleWidget(QWidget):
         top_bar.addWidget(self.week_type_badge)
         self.main_layout.addLayout(top_bar)
         self.week_combo.blockSignals(True)
-        self.week_combo.setCurrentIndex(min(max(self.current_week, 1), 16) - 1)
+        self.week_combo.setCurrentIndex(min(max(self.current_week, 1), self.week_combo.count()) - 1)
         self.week_combo.blockSignals(False)
         self._update_week_badge()
 
@@ -294,15 +295,24 @@ class ScheduleWidget(QWidget):
     def refresh_schedule(self):
         self._refresh_course_color_cache()
         self._clear_schedule_cards()
-        for slot in self._load_schedule_slots():
-            if not self._slot_occurs_this_week(slot):
-                continue
-            self._add_card_to_grid(slot, self._build_slot_card(slot))
+
+        is_exam_week = self._is_current_exam_week()
+        if is_exam_week:
+            self.week_type_badge.setText("考试周")
+            self.week_type_badge.setStyleSheet(self._badge_style(PKU_GOLD))
+        else:
+            for slot in self._load_schedule_slots():
+                if not self._slot_occurs_this_week(slot):
+                    continue
+                self._add_card_to_grid(slot, self._build_slot_card(slot))
+
+        for exam in self._load_week_exams():
+            self._add_card_to_grid(self._exam_to_grid_item(exam), self._build_exam_card(exam))
 
         week_tasks = self._load_week_tasks()
         self._update_ddl_header_badges(week_tasks)
 
-        if self.show_arrangements_checkbox.isChecked():
+        if self.show_arrangements_checkbox.isChecked() and not is_exam_week:
             for arrangement in self._load_task_arrangements():
                 if not self._arrangement_occurs_this_week(arrangement):
                     continue
@@ -351,6 +361,56 @@ class ScheduleWidget(QWidget):
             except Exception as exc:
                 print(f"[GUI] error fetching schedule from Facade: {exc}")
         return base_slots + self.custom_slots
+
+    def _load_week_exams(self):
+        if not self.facade or not hasattr(self.facade, "list_exams"):
+            return []
+        week_start, week_end = self._current_week_date_range()
+        try:
+            exams = self.facade.list_exams()
+        except Exception as exc:
+            print(f"[GUI] failed to load exams for schedule: {exc}")
+            return []
+        result = []
+        for exam in exams:
+            start_time = get_field(exam, "start_time")
+            if not hasattr(start_time, "date"):
+                continue
+            if week_start <= start_time.date() <= week_end:
+                result.append(exam)
+        return sorted(result, key=lambda exam: get_field(exam, "start_time"))
+
+    def _is_current_exam_week(self) -> bool:
+        if not self.facade or not hasattr(self.facade, "get_exam_week_range"):
+            return False
+        try:
+            start_raw, end_raw = self.facade.get_exam_week_range()
+        except Exception:
+            return False
+        start_date = self._coerce_date(start_raw)
+        end_date = self._coerce_date(end_raw)
+        if start_date is None or end_date is None:
+            return False
+        week_start, week_end = self._current_week_date_range()
+        return week_start <= end_date and start_date <= week_end
+
+    def _current_week_date_range(self) -> tuple[date, date]:
+        from datetime import timedelta
+        start = SEMESTER_START + timedelta(days=(self.current_week - 1) * 7)
+        return start, start + timedelta(days=6)
+
+    @staticmethod
+    def _coerce_date(value):
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, str) and value.strip():
+            try:
+                return date.fromisoformat(value.strip()[:10])
+            except ValueError:
+                return None
+        return None
 
     def _load_task_arrangements(self):
         arrangements = list(self.gui_task_arrangements)
@@ -510,6 +570,70 @@ class ScheduleWidget(QWidget):
         layout.addWidget(title)
         if location.text():
             layout.addWidget(location)
+        return card
+
+    def _exam_to_grid_item(self, exam) -> dict:
+        start_dt = get_field(exam, "start_time")
+        end_dt = get_field(exam, "end_time")
+        start_time = start_dt.time() if hasattr(start_dt, "time") else time(9, 0)
+        end_time = end_dt.time() if hasattr(end_dt, "time") else time(11, 0)
+        weekday = start_dt.weekday() + 1 if hasattr(start_dt, "weekday") else 1
+        return {
+            "weekday": weekday,
+            "start_time": start_time,
+            "end_time": end_time,
+            "title": get_field(exam, "name", "考试"),
+        }
+
+    def _build_exam_card(self, exam):
+        card = QFrame()
+        card.setObjectName("examCard")
+        card.setStyleSheet(
+            f"""
+            QFrame#examCard {{
+                background-color: #FFF8E6;
+                border: 2px solid {PKU_GOLD};
+                border-radius: 6px;
+            }}
+            QFrame#examCard QLabel {{
+                background-color: transparent;
+            }}
+            """
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(2)
+
+        start_dt = get_field(exam, "start_time")
+        end_dt = get_field(exam, "end_time")
+        if hasattr(start_dt, "strftime") and hasattr(end_dt, "strftime"):
+            time_text = f"{start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')}"
+        else:
+            time_text = "考试"
+
+        badge = QLabel("考试")
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet(f"color: #8A5A00; font-size: 9px; font-weight: 700;")
+        time_label = QLabel(time_text)
+        time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        time_label.setStyleSheet(f"color: #8A5A00; font-size: 9px; font-weight: 700;")
+        title = QLabel(str(get_field(exam, "name", "考试")))
+        title.setWordWrap(True)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(f"color: {INK}; font-size: 11px; font-weight: 700;")
+        location_text = str(get_field(exam, "location", "") or "")
+        seat_text = str(get_field(exam, "seat", "") or "")
+        detail = " ".join(part for part in (location_text, seat_text) if part)
+        detail_label = QLabel(detail)
+        detail_label.setWordWrap(True)
+        detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        detail_label.setStyleSheet(f"color: {TEXT}; font-size: 9px;")
+
+        layout.addWidget(badge)
+        layout.addWidget(time_label)
+        layout.addWidget(title)
+        if detail:
+            layout.addWidget(detail_label)
         return card
 
     def _build_task_arrangement_card(self, arrangement):
@@ -677,7 +801,7 @@ class ScheduleWidget(QWidget):
         days = (date.today() - SEMESTER_START).days
         if days < 0:
             return 1
-        return max(1, min(16, days // 7 + 1))
+        return max(1, min(ScheduleWidget.DEFAULT_DISPLAY_WEEKS, days // 7 + 1))
 
     @staticmethod
     def _badge_style(color):

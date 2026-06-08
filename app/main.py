@@ -3,6 +3,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from app.gui.main_window import MainWindow
+from app.gui.theme import application_style
 
 
 def build_facade():
@@ -85,11 +86,13 @@ def build_facade():
     )
     facade.db_manager = db_manager
     facade.alert_repository = alert_repository
+    facade.setting_repository = setting_repository
     return facade
 
 
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setStyleSheet(application_style())
 
     window = MainWindow(build_facade())
     window.show()

@@ -87,6 +87,13 @@ class AppFacade:
             raise RuntimeError("exam_manager not wired into AppFacade")
         return self.exam_manager.list_exams(course_id)
 
+    def create_exam(self, data: dict) -> int:
+        if self.exam_manager is None:
+            raise RuntimeError("exam_manager not wired into AppFacade")
+        if not hasattr(self.exam_manager, "create_exam"):
+            raise RuntimeError("exam_manager does not support creating exams")
+        return self.exam_manager.create_exam(data)
+
     def list_schedule(self, weekday: int, week: int) -> list[ScheduleSlot]:
         if self.schedule_manager is None:
             raise RuntimeError("schedule_manager not wired into AppFacade")
@@ -124,10 +131,10 @@ class AppFacade:
             raise RuntimeError("alert_repository not wired into AppFacade")
         return self.alert_manager.alert_repository.list_all()
 
-    def recommend_for_task(self, task_id: int) -> list[ScheduleSlot]:
+    def recommend_for_task(self, task_id: int, *, week: int = 1, max_results: int = 5) -> list[ScheduleSlot]:
         if self.recommendation_manager is None:
             raise RuntimeError("recommendation_manager not wired into AppFacade")
-        return self.recommendation_manager.recommend_for_task(task_id)
+        return self.recommendation_manager.recommend_for_task(task_id, week=week, max_results=max_results)
 
     def arrange_task_at_slot(self, task_id: int, slot_obj) -> None:
         if self.recommendation_manager is None:
@@ -172,6 +179,24 @@ class AppFacade:
         except Exception:
             return None
 
+    def set_exam_week_range(self, start: str | None, end: str | None) -> None:
+        setting_repository = getattr(self, "setting_repository", None)
+        if setting_repository is None:
+            return
+        if start:
+            setting_repository.set("exam_week_start", start)
+        if end:
+            setting_repository.set("exam_week_end", end)
+
+    def get_exam_week_range(self) -> tuple[str | None, str | None]:
+        setting_repository = getattr(self, "setting_repository", None)
+        if setting_repository is None:
+            return None, None
+        return (
+            setting_repository.get("exam_week_start"),
+            setting_repository.get("exam_week_end"),
+        )
+
     # ─── AI 相关 ──────────────────────────────────────────────
 
     def ai_decompose_task(self, description: str, due_time: datetime) -> list[dict]:
@@ -184,6 +209,11 @@ class AppFacade:
         if self.ai_assistant_manager is None:
             raise RuntimeError("ai_assistant_manager not wired into AppFacade")
         return self.ai_assistant_manager.chat(conversation_id, user_msg, context_task_id)
+
+    def ai_reset_conversation(self, conversation_id: int | None = None) -> int | None:
+        if self.ai_assistant_manager is None:
+            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
+        return self.ai_assistant_manager.reset_conversation(conversation_id)
 
     def ai_generate_briefing(self) -> str:
         if self.ai_assistant_manager is None:

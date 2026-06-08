@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.gui.theme import BORDER, INK, PKU_RED, form_control_style, primary_button_style
+from app.gui.theme import BORDER, INK, PKU_RED, form_control_style, primary_button_style, secondary_button_style
 
 
 class AIChatDialog(QDialog):
@@ -34,7 +34,15 @@ class AIChatDialog(QDialog):
 
         title = QLabel("AI 学习助手")
         title.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {INK};")
-        layout.addWidget(title)
+        title_row = QHBoxLayout()
+        title_row.addWidget(title)
+        title_row.addStretch()
+        self.new_chat_button = QPushButton("新对话")
+        self.new_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.new_chat_button.setStyleSheet(secondary_button_style())
+        self.new_chat_button.clicked.connect(self.restart_conversation)
+        title_row.addWidget(self.new_chat_button)
+        layout.addLayout(title_row)
 
         self.chat_view = QTextBrowser()
         self.chat_view.setOpenExternalLinks(True)
@@ -91,6 +99,16 @@ class AIChatDialog(QDialog):
             QMessageBox.critical(self, "AI 调用失败", str(exc))
             return
         self._append_assistant(str(reply))
+
+    def restart_conversation(self) -> None:
+        if self.facade and hasattr(self.facade, "ai_reset_conversation"):
+            try:
+                self.facade.ai_reset_conversation(self.conversation_id)
+            except Exception:
+                pass
+        self.conversation_id = None
+        self.chat_view.clear()
+        self._append_assistant("已开始新对话。你可以重新描述当前任务、课程或计划需求。")
 
     def _append_user(self, text: str) -> None:
         self.chat_view.append(f"<p><b style='color:{PKU_RED}'>你：</b>{self._escape(text)}</p>")

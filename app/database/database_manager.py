@@ -71,6 +71,11 @@ class DatabaseManager:
                 conn.execute(
                     "ALTER TABLE tasks ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0"
                 )
+        cursor = conn.execute("PRAGMA table_info(exams)")
+        exam_cols = {row[1] for row in cursor.fetchall()}
+        if "seat" not in exam_cols:
+            with conn:
+                conn.execute("ALTER TABLE exams ADD COLUMN seat TEXT NOT NULL DEFAULT ''")
         self._fix_wrong_year_due_times(conn)
 
     @staticmethod

@@ -1,6 +1,9 @@
 """Recommend free schedule slots for tasks."""
 from __future__ import annotations
 
+from datetime import date, timedelta
+
+from app.config import SEMESTER_START
 from app.models.schedule_slot import ScheduleSlot
 
 
@@ -24,17 +27,33 @@ class RecommendationManager:
         if task.is_done():
             return []
 
+        today = date.today()
+        first_allowed_date = today + timedelta(days=1)
+        due_date = task.due_time.date()
+        if due_date < first_allowed_date:
+            return []
+
+        current_week = max(1, (today - SEMESTER_START).days // 7 + 1) if today >= SEMESTER_START else 1
+        week = max(week, current_week)
+
         weekday_order = list(range(1, 8))
         due_weekday = task.due_time.isoweekday()
         weekday_order.sort(key=lambda day: (day > due_weekday, day))
 
         candidates: list[ScheduleSlot] = []
         for weekday in weekday_order:
+            slot_date = self._date_for_weekday(week, weekday)
+            if slot_date < first_allowed_date or slot_date > due_date:
+                continue
             for slot in self.schedule_manager.get_free_slots(weekday, week):
                 if slot.can_hold_task(task):
                     candidates.append(slot)
-        candidates.sort(key=lambda slot: (slot.weekday, slot.start_time))
+        candidates.sort(key=lambda slot: (self._date_for_weekday(week, slot.weekday), slot.start_time))
         return candidates[:max_results]
+
+    @staticmethod
+    def _date_for_weekday(week: int, weekday: int) -> date:
+        return SEMESTER_START + timedelta(days=(week - 1) * 7 + weekday - 1)
 
     # ─── 任务安排 CRUD（内存，重启后清空）────────────────────────
 

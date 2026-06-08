@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from app.config import AI_DAILY_TOKEN_LIMIT
+from app.config import AI_DAILY_TOKEN_LIMIT, SEMESTER_START
 from app.network.key_store import KeyStore
 from app.network.llm_client import LLMClient
 from app.network.network_errors import NetworkError
@@ -141,6 +141,13 @@ class AIAssistantManager:
         history.append({"role": "user", "content": user_msg.strip()})
         history.append({"role": "assistant", "content": reply})
         return conversation_id, reply
+
+    def reset_conversation(self, conversation_id: int | None = None) -> int | None:
+        if conversation_id is not None:
+            self._conversations.pop(conversation_id, None)
+            return None
+        self._conversations.clear()
+        return None
 
     def generate_briefing(self) -> str:
         if self.task_manager is None:
@@ -355,6 +362,13 @@ class AIAssistantManager:
             except Exception:
                 pass
 
+        # Full schedule context
+        if self.schedule_manager is not None:
+            try:
+                lines.extend(self._build_schedule_context())
+            except Exception:
+                pass
+
         # Focused task detail
         if focused_task_id is not None and self.task_manager is not None:
             try:
@@ -368,6 +382,83 @@ class AIAssistantManager:
                 pass
 
         return "\n".join(lines)
+
+    def _build_schedule_context(self) -> list[str]:
+        today = date.today()
+        current_week = self._current_semester_week(today)
+        weekday_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
+        lines: list[str] = [f"\n【当前周完整课表（第 {current_week} 周）】"]
+
+        week_has_slots = False
+        for weekday in range(1, 8):
+            slots = self.schedule_manager.list_slots(current_week, weekday)
+            if not slots:
+                continue
+            week_has_slots = True
+            lines.append(f"{weekday_names[weekday]}：")
+            for slot in sorted(slots, key=lambda x: x.start_time):
+                lines.append(f"- {self._format_schedule_slot(slot)}")
+        if not week_has_slots:
+            lines.append("本周暂无课程。")
+
+        all_slots_by_key = {}
+        for week in range(1, 17):
+            for slot in self.schedule_manager.list_slots(week):
+                key = (
+                    getattr(slot, "id", None),
+                    getattr(slot, "title", ""),
+                    getattr(slot, "weekday", 0),
+                    getattr(slot, "start_time", None),
+                    getattr(slot, "end_time", None),
+                    getattr(slot, "start_week", week),
+                    getattr(slot, "end_week", week),
+                    getattr(slot, "week_type", "all"),
+                )
+                all_slots_by_key[key] = slot
+
+        lines.append(f"\n【全学期课表摘要（共 {len(all_slots_by_key)} 个课程/时段）】")
+        if not all_slots_by_key:
+            lines.append("暂无全学期课表数据。")
+            return lines
+
+        all_slots = sorted(
+            all_slots_by_key.values(),
+            key=lambda slot: (
+                getattr(slot, "weekday", 0),
+                getattr(slot, "start_time", None),
+                getattr(slot, "title", ""),
+            ),
+        )
+        for slot in all_slots[:80]:
+            weekday = weekday_names.get(getattr(slot, "weekday", 0), str(getattr(slot, "weekday", "")))
+            lines.append(f"- {weekday} {self._format_schedule_slot(slot)} | {self._format_week_range(slot)}")
+        if len(all_slots) > 80:
+            lines.append(f"- 其余 {len(all_slots) - 80} 个时段已省略。")
+        return lines
+
+    @staticmethod
+    def _current_semester_week(today: date) -> int:
+        days_since_start = (today - SEMESTER_START).days
+        if days_since_start < 0:
+            return 1
+        return max(1, min(16, days_since_start // 7 + 1))
+
+    @staticmethod
+    def _format_schedule_slot(slot) -> str:
+        start = slot.start_time.strftime("%H:%M") if hasattr(slot.start_time, "strftime") else str(slot.start_time)[:5]
+        end = slot.end_time.strftime("%H:%M") if hasattr(slot.end_time, "strftime") else str(slot.end_time)[:5]
+        location = getattr(slot, "location", "") or "未知地点"
+        return f"{slot.title} {start}-{end} @{location}"
+
+    @staticmethod
+    def _format_week_range(slot) -> str:
+        start_week = getattr(slot, "start_week", "")
+        end_week = getattr(slot, "end_week", "")
+        week_type = getattr(slot, "week_type", "all")
+        suffix = {"odd": "单周", "even": "双周", "all": "每周"}.get(week_type, week_type)
+        if start_week == end_week:
+            return f"第 {start_week} 周，{suffix}"
+        return f"第 {start_week}-{end_week} 周，{suffix}"
 
     def _task_context(self, task_id: int | None) -> str:
         """Kept for backward compatibility; delegates to _build_data_context."""

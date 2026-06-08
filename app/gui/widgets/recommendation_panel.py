@@ -336,7 +336,10 @@ class RecommendationPanel(QWidget):
         if not self.facade or not hasattr(self.facade, "recommend_for_task"):
             return []
         try:
-            return self.facade.recommend_for_task(self.current_task_id)
+            week = self._current_schedule_week()
+            if week is None:
+                return self.facade.recommend_for_task(self.current_task_id)
+            return self.facade.recommend_for_task(self.current_task_id, week=week)
         except NotImplementedError:
             return []
         except Exception as exc:
