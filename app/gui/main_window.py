@@ -129,9 +129,9 @@ class MainWindow(QMainWindow):
             layout.addWidget(button)
 
         layout.addStretch()
-        status = QLabel("真实接口模式")
-        status.setStyleSheet("color: #F3D9D9; font-size: 12px;")
-        layout.addWidget(status)
+        developer = QLabel("Developed by\n@Roast_Spider 小组")
+        developer.setStyleSheet("color: #F3D9D9; font-size: 14px;")
+        layout.addWidget(developer)
         return sidebar
 
     def _build_ai_page(self) -> QWidget:
@@ -167,16 +167,12 @@ class MainWindow(QMainWindow):
 
         title = QLabel("教学网同步")
         title.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {INK};")
-        body = QLabel("真实网络同步由后端负责。GUI 只打开同步对话框，并显示 facade 返回的结果。")
-        body.setWordWrap(True)
-        body.setStyleSheet("font-size: 13px; color: #4B5563;")
         open_button = QPushButton("打开同步窗口")
         open_button.setCursor(Qt.CursorShape.PointingHandCursor)
         open_button.clicked.connect(self._open_sync_dialog)
         open_button.setStyleSheet(primary_button_style() + "QPushButton { max-width: 140px; }")
 
         layout.addWidget(title)
-        layout.addWidget(body)
         layout.addWidget(open_button)
         layout.addStretch()
         return page
