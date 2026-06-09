@@ -12,6 +12,7 @@ from bs4.element import Tag
 
 from app.models.schedule_slot import ScheduleSlot
 from app.network.network_errors import ParseError
+from app.parsers._common import coerce_external_id, coerce_str
 
 
 class ScheduleParser:
@@ -86,7 +87,7 @@ class ScheduleParser:
         return self._dedupe(self._parse_table_schedule(soup))
 
     def _build_slot_from_dict(self, entry: dict) -> Optional[ScheduleSlot]:
-        title = self._coerce_str(entry.get("title") or entry.get("course") or entry.get("name"))
+        title = coerce_str(entry.get("title") or entry.get("course") or entry.get("name"))
         weekday = self._parse_int(entry.get("weekday"))
         start_time = self._parse_time(entry.get("start_time") or entry.get("startTime"))
         end_time = self._parse_time(entry.get("end_time") or entry.get("endTime"))
@@ -102,8 +103,8 @@ class ScheduleParser:
         if start_week < 1 or end_week < start_week:
             return None
 
-        course_external_id = self._coerce_str(entry.get("course_external_id") or entry.get("courseId"))
-        course_name = self._coerce_str(entry.get("course_name") or entry.get("course"))
+        course_external_id = coerce_str(entry.get("course_external_id") or entry.get("courseId"))
+        course_name = coerce_str(entry.get("course_name") or entry.get("course"))
         raw_payload = json.dumps(
             {"course_external_id": course_external_id, "course_name": course_name or title, "raw": entry},
             ensure_ascii=False,
@@ -114,13 +115,13 @@ class ScheduleParser:
             weekday=weekday,
             start_time=start_time,
             end_time=end_time,
-            location=self._coerce_str(entry.get("location")),
+            location=coerce_str(entry.get("location")),
             slot_type=slot_type,
             start_week=start_week,
             end_week=end_week,
             week_type=week_type,
             source="sync",
-            external_id=self._coerce_external_id(entry.get("external_id") or entry.get("id")) or self._external_id(title, weekday, start_time, end_time),
+            external_id=coerce_external_id(entry.get("external_id") or entry.get("id")) or self._external_id(title, weekday, start_time, end_time),
         )
         slot.raw_payload = raw_payload
         return slot
@@ -158,11 +159,16 @@ class ScheduleParser:
                 if not cells:
                     continue
                 row_text = row.get_text(" ", strip=True)
-                row_period = self._period_from_text(row_text) or row_index
-                if 1 <= row_period <= 12:
+                row_period = self._period_from_text(row_text)
+                if row_period is not None and 1 <= row_period <= 12:
                     period_counter = row_period
-                else:
-                    period_counter += 1
+                elif period_counter == 0:
+                    # No period header row seen yet — fall back to row index but
+                    # cap so we never index beyond PERIOD_TIMES.
+                    period_counter = row_index if 1 <= row_index <= 12 else 0
+                # If neither branch produced a valid period, skip this row
+                # without incrementing — unmarked filler rows must not push
+                # the counter past 12 and silently drop the rest of the table.
                 if not 1 <= period_counter <= 12:
                     continue
 
@@ -191,7 +197,7 @@ class ScheduleParser:
                 colspan = self._parse_int(cell.get("colspan")) or 1
                 if weekday is not None:
                     for offset in range(colspan):
-                        weekday_columns[visual_col + offset] = weekday + offset if colspan > 1 and weekday + offset <= 7 else weekday
+                        weekday_columns[visual_col + offset] = weekday
                 visual_col += colspan
             if weekday_columns:
                 return weekday_columns
@@ -316,19 +322,6 @@ class ScheduleParser:
     def _extract_text(parent: Tag, selector: str) -> str:
         node = parent.select_one(selector)
         return "" if node is None else node.get_text(strip=True)
-
-    @staticmethod
-    def _coerce_str(value: Any) -> str:
-        if value is None:
-            return ""
-        return value.strip() if isinstance(value, str) else str(value)
-
-    @staticmethod
-    def _coerce_external_id(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        text = value.strip() if isinstance(value, str) else str(value)
-        return text or None
 
     @staticmethod
     def _parse_int(value: Any) -> Optional[int]:

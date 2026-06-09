@@ -44,6 +44,12 @@ PORTAL_COURSETABLE_URL = (
 LOG_LEVEL = "INFO"
 LOG_FILE = os.path.join(ROOT_DIR, "data", "ddl_center.log")
 
+# TLS verification for IAAA / Blackboard / Portal requests. Default ON; users
+# on networks with broken cert chains can opt out with PKU_DISABLE_SSL_VERIFY=1
+# in .env. We never disable verification globally.
+_disable_ssl_env = os.getenv("PKU_DISABLE_SSL_VERIFY", "").strip().lower()
+PKU_VERIFY_SSL = _disable_ssl_env not in {"1", "true", "yes", "on"}
+
 # Mock data (fallback when real sync is unavailable)
 MOCK_DDL_PATH = os.path.join(DATA_DIR, "mock_ddl.html")
 MOCK_SCHEDULE_PATH = os.path.join(DATA_DIR, "mock_schedule.html")

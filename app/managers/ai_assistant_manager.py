@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime, timedelta
+import re
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +105,573 @@ class AIAssistantManager:
                 }
             )
         return cleaned or fallback
+
+    def parse_task_from_text(self, raw_text: str) -> dict:
+        """Backward-compatible task parser; delegates to parse_item_from_text."""
+        item = self.parse_item_from_text(raw_text)
+        if item["type"] != "task":
+            raise ValueError(
+                f"AI 识别为 {item['type']} 类型，请使用智能创建对话框"
+            )
+        payload = dict(item["payload"])
+        payload.setdefault("priority", 2)
+        payload.setdefault("status", "todo")
+        return payload
+
+    def parse_item_from_text(self, raw_text: str) -> dict:
+        """Parse a free-form Chinese description into a typed item.
+
+        Returns ``{"type": "task"|"class"|"exam", "payload": {...}}`` where
+        ``payload`` is shaped to match the corresponding facade.create_* method.
+        Uses the LLM when available; falls back to regex parsing otherwise.
+        """
+        if not isinstance(raw_text, str) or not raw_text.strip():
+            raise ValueError("raw_text cannot be empty")
+
+        fallback_template = (
+            "你是中文学习助理，识别用户描述的是 task / class / exam 之一并返回 JSON。"
+            "今天是 {today}。\n输入：{raw_text}\n输出："
+        )
+        prompt = self._format_prompt(
+            "item_from_text.txt",
+            fallback_template,
+            today=date.today().isoformat(),
+            raw_text=raw_text.strip(),
+        )
+        reply = self._safe_chat(
+            [
+                {
+                    "role": "system",
+                    "content": "You parse Chinese descriptions to JSON.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            fallback="{}",
+        )
+
+        if not reply or reply.strip() in {"{}", ""}:
+            return self._fallback_parse_item(raw_text)
+
+        match = re.search(r"\{.*\}", reply, re.DOTALL)
+        if not match:
+            return self._fallback_parse_item(raw_text)
+        try:
+            data = json.loads(match.group(0))
+        except ValueError:
+            return self._fallback_parse_item(raw_text)
+        if not isinstance(data, dict):
+            return self._fallback_parse_item(raw_text)
+
+        item_type, payload = self._normalize_item_envelope(data)
+        if item_type is None or not isinstance(payload, dict):
+            return self._fallback_parse_item(raw_text)
+
+        try:
+            if item_type == "task":
+                cleaned = self._clean_task_payload(payload)
+            elif item_type == "class":
+                cleaned = self._clean_class_payload(payload)
+            elif item_type == "exam":
+                cleaned = self._clean_exam_payload(payload)
+            else:
+                return self._fallback_parse_item(raw_text)
+        except ValueError:
+            raise
+        return {"type": item_type, "payload": cleaned}
+
+    @staticmethod
+    def _normalize_item_envelope(data: dict) -> tuple[str | None, dict]:
+        """Accept both ``{type, payload}`` envelopes and flat shapes."""
+        raw_type = data.get("type")
+        payload = data.get("payload")
+        if isinstance(raw_type, str) and isinstance(payload, dict):
+            t = raw_type.strip().lower()
+            if t in ("task", "class", "exam"):
+                return t, payload
+        # Flat shape heuristics — preserves backward compat with task-only LLM replies.
+        has_weekday = "weekday" in data
+        has_start_end = "start_time" in data and "end_time" in data
+        if "title" in data and "due_time" in data and not has_weekday:
+            return "task", data
+        if "weekday" in data and has_start_end:
+            return "class", data
+        if ("name" in data) and has_start_end and not has_weekday:
+            return "exam", data
+        return None, data
+
+    @staticmethod
+    def _clean_task_payload(data: dict) -> dict:
+        title = data.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("AI 未能识别出任务标题")
+        title = title.strip()
+
+        due_raw = data.get("due_time")
+        if not isinstance(due_raw, str) or not due_raw.strip():
+            raise ValueError("AI 未能识别出截止时间")
+        try:
+            due_time = datetime.fromisoformat(due_raw.strip().replace("Z", ""))
+        except ValueError:
+            raise ValueError("AI 未能识别出截止时间")
+        if due_time.tzinfo is not None:
+            due_time = due_time.replace(tzinfo=None)
+
+        description = data.get("description")
+        if not isinstance(description, str):
+            description = ""
+
+        try:
+            estimated_hours = float(data.get("estimated_hours", 2))
+        except (TypeError, ValueError):
+            estimated_hours = 2.0
+        if estimated_hours <= 0:
+            estimated_hours = 2.0
+
+        return {
+            "title": title,
+            "due_time": due_time,
+            "description": description,
+            "estimated_hours": estimated_hours,
+            "priority": 2,
+            "status": "todo",
+        }
+
+    @staticmethod
+    def _clean_class_payload(data: dict) -> dict:
+        title = data.get("title") or data.get("name")
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("AI 未能识别出课程标题")
+        title = title.strip()[:30]
+
+        try:
+            weekday = int(data.get("weekday"))
+        except (TypeError, ValueError):
+            raise ValueError("AI 未能识别出星期")
+        if not 1 <= weekday <= 7:
+            raise ValueError("AI 识别出的星期不合法")
+
+        try:
+            start_time = time.fromisoformat(str(data.get("start_time", "")).strip())
+            end_time = time.fromisoformat(str(data.get("end_time", "")).strip())
+        except ValueError:
+            raise ValueError("AI 未能识别出上下课时间")
+
+        location = data.get("location")
+        if not isinstance(location, str):
+            location = ""
+
+        try:
+            start_week = int(data.get("start_week", 1))
+        except (TypeError, ValueError):
+            start_week = 1
+        try:
+            end_week = int(data.get("end_week", 16))
+        except (TypeError, ValueError):
+            end_week = 16
+        if start_week < 1:
+            start_week = 1
+        if end_week < start_week:
+            end_week = start_week
+
+        week_type = str(data.get("week_type", "all")).strip().lower()
+        if week_type not in ("all", "odd", "even"):
+            week_type = "all"
+
+        return {
+            "title": title,
+            "weekday": weekday,
+            "start_time": start_time,
+            "end_time": end_time,
+            "location": location,
+            "slot_type": "lecture",
+            "start_week": start_week,
+            "end_week": end_week,
+            "week_type": week_type,
+        }
+
+    @staticmethod
+    def _clean_exam_payload(data: dict) -> dict:
+        name = data.get("name") or data.get("title")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("AI 未能识别出考试名称")
+        name = name.strip()[:30]
+
+        start_raw = data.get("start_time")
+        end_raw = data.get("end_time")
+        if not isinstance(start_raw, str) or not isinstance(end_raw, str):
+            raise ValueError("AI 未能识别出考试时间")
+        try:
+            start_time = datetime.fromisoformat(start_raw.strip().replace("Z", ""))
+            end_time = datetime.fromisoformat(end_raw.strip().replace("Z", ""))
+        except ValueError:
+            raise ValueError("AI 未能识别出考试时间")
+        if start_time.tzinfo is not None:
+            start_time = start_time.replace(tzinfo=None)
+        if end_time.tzinfo is not None:
+            end_time = end_time.replace(tzinfo=None)
+
+        location = data.get("location")
+        if not isinstance(location, str):
+            location = ""
+
+        exam_type = str(data.get("exam_type", "final")).strip().lower()
+        if exam_type not in ("final", "midterm", "quiz", "other"):
+            exam_type = "final"
+
+        return {
+            "name": name,
+            "start_time": start_time,
+            "end_time": end_time,
+            "location": location,
+            "exam_type": exam_type,
+            "seat": "",
+        }
+
+    @classmethod
+    def _fallback_parse_item(cls, raw_text: str) -> dict:
+        """Regex fallback when the LLM is unavailable; classifies first then parses."""
+        if not isinstance(raw_text, str) or not raw_text.strip():
+            raise ValueError("AI 不可用，无法识别输入")
+        text = raw_text.strip()
+
+        is_exam = bool(re.search(r"考试|期末|期中|小测|测验|quiz", text, re.IGNORECASE))
+        is_class = (
+            bool(re.search(r"每周|每星期|周[一二三四五六日天]|讲授|上课|课程|节课", text))
+            and not is_exam
+        )
+
+        if is_exam:
+            return {"type": "exam", "payload": cls._fallback_parse_exam(text)}
+        if is_class:
+            return {"type": "class", "payload": cls._fallback_parse_class(text)}
+        return {"type": "task", "payload": cls._fallback_parse_task(text)}
+
+    @classmethod
+    def _extract_time_range(cls, text: str) -> tuple[time | None, time | None]:
+        """Find a "HH:MM-HH:MM" or "H点-H点" / "H-H 点" range; respects 晚."""
+        m = re.search(
+            r"(\d{1,2})[:：](\d{2})\s*[\-–~到至]\s*(\d{1,2})[:：](\d{2})",
+            text,
+        )
+        if m:
+            sh, sm, eh, em = (int(g) for g in m.groups())
+            if "晚" in text and sh < 12:
+                sh += 12
+                if eh < 12:
+                    eh += 12
+            if 0 <= sh <= 23 and 0 <= eh <= 23 and 0 <= sm < 60 and 0 <= em < 60:
+                return time(sh, sm), time(eh, em)
+        m = re.search(
+            r"(\d{1,2})\s*[\-–~到至]\s*(\d{1,2})\s*点",
+            text,
+        )
+        if m:
+            sh, eh = int(m.group(1)), int(m.group(2))
+            if "晚" in text and sh < 12:
+                sh += 12
+                if eh < 12:
+                    eh += 12
+            if 0 <= sh <= 23 and 0 <= eh <= 23:
+                return time(sh, 0), time(eh, 0)
+        return None, None
+
+    @classmethod
+    def _fallback_parse_class(cls, text: str) -> dict:
+        weekday_map = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "日": 7, "天": 7}
+        m = re.search(r"周([一二三四五六日天])", text)
+        if not m:
+            raise ValueError("AI 不可用，无法识别输入")
+        weekday = weekday_map[m.group(1)]
+
+        start_time, end_time = cls._extract_time_range(text)
+        if start_time is None or end_time is None:
+            raise ValueError("AI 不可用，无法识别输入")
+
+        start_week, end_week = 1, 16
+        wm = re.search(r"(\d{1,2})\s*[\-–~到至]\s*(\d{1,2})\s*周", text)
+        if wm:
+            start_week = int(wm.group(1))
+            end_week = int(wm.group(2))
+
+        location = ""
+        lm = re.search(
+            r"(理教|文史楼|二教|三教|四教|教学楼|实验楼|[A-Za-z]+楼)\s*\w*",
+            text,
+        )
+        if lm:
+            location = lm.group(0).strip()
+
+        title = cls._strip_class_tokens(text)
+        if not title:
+            title = text[:20]
+
+        return {
+            "title": title,
+            "weekday": weekday,
+            "start_time": start_time,
+            "end_time": end_time,
+            "location": location,
+            "slot_type": "lecture",
+            "start_week": start_week,
+            "end_week": end_week,
+            "week_type": "all",
+        }
+
+    @staticmethod
+    def _strip_class_tokens(text: str) -> str:
+        title = text
+        title = re.sub(r"每周[一二三四五六日天]|每星期[一二三四五六日天]", "", title)
+        title = re.sub(r"每周|每星期", "", title)
+        title = re.sub(r"周[一二三四五六日天]", "", title)
+        title = re.sub(
+            r"\d{1,2}[:：]\d{2}\s*[\-–~到至]\s*\d{1,2}[:：]\d{2}",
+            "",
+            title,
+        )
+        title = re.sub(
+            r"\d{1,2}\s*[\-–~到至]\s*\d{1,2}\s*周",
+            "",
+            title,
+        )
+        title = re.sub(
+            r"\d{1,2}\s*[\-–~到至]\s*\d{1,2}\s*点",
+            "",
+            title,
+        )
+        title = re.sub(r"晚上|早上|上午|中午|下午|深夜|凌晨|晚", "", title)
+        title = re.sub(
+            r"理教\s*\w*|二教\s*\w*|三教\s*\w*|四教\s*\w*|文史楼\s*\w*|教学楼\s*\w*|实验楼\s*\w*",
+            "",
+            title,
+        )
+        title = re.sub(r"[，,。;；]+", " ", title)
+        title = re.sub(r"\s+", " ", title)
+        return title.strip(" ，。、:：-~")[:30]
+
+    @classmethod
+    def _fallback_parse_exam(cls, text: str) -> dict:
+        today = date.today()
+        target_date: date | None = None
+
+        m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
+        if m:
+            try:
+                target_date = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                target_date = None
+
+        if target_date is None:
+            m = re.search(r"(\d{1,2})月(\d{1,2})[日号]", text)
+            if m:
+                month, day = int(m.group(1)), int(m.group(2))
+                year = today.year
+                try:
+                    cand = date(year, month, day)
+                    if cand < today:
+                        cand = date(year + 1, month, day)
+                    target_date = cand
+                except ValueError:
+                    target_date = None
+
+        start_time, end_time = cls._extract_time_range(text)
+        if target_date is None or start_time is None or end_time is None:
+            raise ValueError("AI 不可用，无法识别输入")
+
+        name = cls._strip_exam_tokens(text)
+        if not name:
+            name = text[:30]
+
+        if "期中" in text:
+            exam_type = "midterm"
+        elif "小测" in text or "测验" in text or re.search(r"quiz", text, re.IGNORECASE):
+            exam_type = "quiz"
+        elif "期末" in text or "考试" in text:
+            exam_type = "final"
+        else:
+            exam_type = "other"
+
+        location = ""
+        lm = re.search(
+            r"(理教|文史楼|二教|三教|四教|教学楼|实验楼|[A-Za-z]+楼)\s*\w*",
+            text,
+        )
+        if lm:
+            location = lm.group(0).strip()
+
+        return {
+            "name": name,
+            "start_time": datetime.combine(target_date, start_time),
+            "end_time": datetime.combine(target_date, end_time),
+            "location": location,
+            "exam_type": exam_type,
+            "seat": "",
+        }
+
+    @staticmethod
+    def _strip_exam_tokens(text: str) -> str:
+        name = text
+        for sep in ["，", ",", "。", "；", ";"]:
+            if sep in name:
+                name = name.split(sep, 1)[0]
+                break
+        name = re.sub(r"\d{4}-\d{1,2}-\d{1,2}.*", "", name)
+        name = re.sub(r"\d{1,2}月\d{1,2}[日号].*", "", name)
+        name = re.sub(
+            r"\d{1,2}[:：]\d{2}\s*[\-–~到至]\s*\d{1,2}[:：]\d{2}.*",
+            "",
+            name,
+        )
+        name = re.sub(
+            r"(早上|上午|中午|下午|晚上|晚|深夜|凌晨)?\d{1,2}[点:：]\d{0,2}.*",
+            "",
+            name,
+        )
+        return name.strip(" ，。、:：-~")[:30]
+
+    @staticmethod
+    def _fallback_parse_task(raw_text: str) -> dict:
+        """Pure-regex fallback for parsing task descriptions when LLM is unavailable."""
+        if not isinstance(raw_text, str) or not raw_text.strip():
+            raise ValueError("AI 未能识别出任务标题")
+        text = raw_text.strip()
+        today = date.today()
+
+        # ── Date parsing ───────────────────────────────────────
+        target_date: date | None = None
+
+        m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
+        if m:
+            try:
+                target_date = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                target_date = None
+
+        if target_date is None:
+            m = re.search(r"(\d{1,2})月(\d{1,2})[日号]", text)
+            if m:
+                month, day = int(m.group(1)), int(m.group(2))
+                year = today.year
+                try:
+                    candidate = date(year, month, day)
+                    if candidate < today:
+                        candidate = date(year + 1, month, day)
+                    target_date = candidate
+                except ValueError:
+                    target_date = None
+
+        if target_date is None:
+            if "后天" in text:
+                target_date = today + timedelta(days=2)
+            elif "明天" in text:
+                target_date = today + timedelta(days=1)
+            elif "今天" in text or "今晚" in text:
+                target_date = today
+
+        if target_date is None:
+            weekday_map = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "日": 7, "天": 7}
+            m = re.search(r"(这|本|下)?周([一二三四五六日天])", text)
+            if m:
+                prefix = m.group(1) or "这"
+                target_wd = weekday_map[m.group(2)]
+                today_wd = today.isoweekday()
+                delta = target_wd - today_wd
+                if prefix == "下":
+                    if delta <= 0:
+                        delta += 7
+                    else:
+                        delta += 7
+                else:
+                    if delta < 0:
+                        delta += 7
+                target_date = today + timedelta(days=delta)
+
+        # ── Time parsing ───────────────────────────────────────
+        target_time: time | None = None
+        next_day = False
+
+        # 24点 / 0点 → next day 00:00
+        if re.search(r"24[点:：]", text) or re.search(r"24点", text):
+            target_time = time(0, 0)
+            next_day = True
+
+        if target_time is None:
+            m = re.search(r"(\d{1,2})[:：](\d{2})", text)
+            if m:
+                hour, minute = int(m.group(1)), int(m.group(2))
+                # Apply evening base if "晚" appears
+                if ("晚上" in text or "今晚" in text or "晚" in text) and hour < 12:
+                    hour += 12
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    target_time = time(hour, minute)
+
+        if target_time is None:
+            m = re.search(r"(\d{1,2})点", text)
+            if m:
+                hour = int(m.group(1))
+                if hour == 24:
+                    target_time = time(0, 0)
+                    next_day = True
+                else:
+                    if "凌晨" in text or "深夜" in text:
+                        if hour >= 12:
+                            hour -= 12
+                    elif "晚上" in text or "今晚" in text or "晚" in text:
+                        if hour < 12:
+                            hour += 12
+                    elif "下午" in text and hour < 12:
+                        hour += 12
+                    elif "中午" in text:
+                        hour = 12
+                    if 0 <= hour <= 23:
+                        target_time = time(hour, 0)
+
+        if target_time is None and ("晚上" in text or "今晚" in text):
+            target_time = time(18, 0)
+        if target_time is None and "中午" in text:
+            target_time = time(12, 0)
+        if target_time is None and "凌晨" in text:
+            target_time = time(0, 0)
+
+        if target_date is None and target_time is None:
+            raise ValueError("AI 未能识别出截止时间，请补充日期或时间。")
+
+        if target_date is None:
+            target_date = today
+        if target_time is None:
+            target_time = time(23, 59)
+
+        due_dt = datetime.combine(target_date, target_time)
+        if next_day:
+            due_dt = due_dt + timedelta(days=1)
+
+        # ── Title extraction ───────────────────────────────────
+        # Strip date/time tokens from a leading clause to derive title.
+        title = text
+        # Common splitters
+        for sep in ["，", ",", "。", "；", ";"]:
+            if sep in title:
+                title = title.split(sep, 1)[0]
+                break
+        # Drop trailing time/date noise from title
+        title = re.sub(r"\d{4}-\d{1,2}-\d{1,2}.*", "", title)
+        title = re.sub(r"\d{1,2}月\d{1,2}[日号].*", "", title)
+        title = re.sub(r"(今天|明天|后天|今晚|这周[一二三四五六日天]|下周[一二三四五六日天]).*", "", title)
+        title = re.sub(r"(凌晨|早上|上午|中午|下午|晚上|深夜)?\d{1,2}[点:：]\d{0,2}.*", "", title)
+        title = re.sub(r"(截止|deadline|DDL).*", "", title, flags=re.IGNORECASE)
+        title = title.strip(" ，。、:：")
+        if not title:
+            title = text[:20]
+        if len(title) > 30:
+            title = title[:30]
+
+        return {
+            "title": title,
+            "due_time": due_dt,
+            "description": "",
+            "estimated_hours": 2.0,
+            "priority": 2,
+            "status": "todo",
+        }
 
     def chat(
         self,

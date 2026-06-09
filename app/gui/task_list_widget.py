@@ -23,12 +23,7 @@ from PySide6.QtWidgets import (
 
 from app.gui.task_editor_dialog import TaskEditorDialog
 from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT
-
-
-def get_field(obj, key, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
+from app.gui._helpers import get_field
 
 
 class TaskCardWidget(QFrame):

@@ -7,12 +7,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QVBoxLa
 
 from app.gui.task_list_widget import TaskCardWidget
 from app.gui.theme import INK, PKU_GOLD, PKU_RED, TEXT
-
-
-def get_field(obj, key, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
+from app.gui._helpers import get_field
 
 
 class TimelineSectionWidget(QFrame):

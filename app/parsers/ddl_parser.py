@@ -12,6 +12,7 @@ from bs4.element import Tag
 
 from app.models.task import Task
 from app.network.network_errors import ParseError
+from app.parsers._common import coerce_external_id, coerce_str
 
 
 class DDLParser:
@@ -68,18 +69,18 @@ class DDLParser:
         return tasks
 
     def _build_task_from_dict(self, entry: dict) -> Optional[Task]:
-        title = self._coerce_str(entry.get("title"))
-        due_raw = self._coerce_str(entry.get("due_time") or entry.get("dueTime") or entry.get("deadline"))
+        title = coerce_str(entry.get("title"))
+        due_raw = coerce_str(entry.get("due_time") or entry.get("dueTime") or entry.get("deadline"))
         if not title or not due_raw:
             return None
         due_time = self._parse_datetime(due_raw)
         if due_time is None:
             return None
 
-        course_name = self._coerce_str(entry.get("course_name") or entry.get("course"))
-        course_external_id = self._coerce_str(entry.get("course_external_id") or entry.get("courseId"))
-        kind = self._coerce_str(entry.get("kind") or entry.get("type") or "assignment")
-        external_id = self._coerce_external_id(entry.get("external_id") or entry.get("id"))
+        course_name = coerce_str(entry.get("course_name") or entry.get("course"))
+        course_external_id = coerce_str(entry.get("course_external_id") or entry.get("courseId"))
+        kind = coerce_str(entry.get("kind") or entry.get("type") or "assignment")
+        external_id = coerce_external_id(entry.get("external_id") or entry.get("id"))
         if external_id is None:
             external_id = self._fallback_external_id(title, due_time, course_external_id)
 
@@ -151,7 +152,7 @@ class DDLParser:
             or self._extract_course_external_id(str(item))
         )
         kind = self._extract_text(item, ".kind, .type") or "assignment"
-        external_id = self._coerce_external_id(item.get("data-external-id")) or self._blackboard_external_id(item, title, due_time)
+        external_id = coerce_external_id(item.get("data-external-id")) or self._blackboard_external_id(item, title, due_time)
         raw_payload = json.dumps(
             {
                 "course_external_id": course_external_id,
@@ -181,8 +182,8 @@ class DDLParser:
 
         raw_html = str(item)
         course_wrapper = item.find_parent(attrs={"data-course-external-id": True})
-        wrapped_course_id = self._coerce_str(course_wrapper.get("data-course-external-id")) if course_wrapper else ""
-        wrapped_course_name = self._coerce_str(course_wrapper.get("data-course-name")) if course_wrapper else ""
+        wrapped_course_id = coerce_str(course_wrapper.get("data-course-external-id")) if course_wrapper else ""
+        wrapped_course_name = coerce_str(course_wrapper.get("data-course-name")) if course_wrapper else ""
         course_external_id = wrapped_course_id or self._extract_course_external_id(raw_html) or self._extract_course_external_id(str(soup))
         course_name = wrapped_course_name or self._course_name_from_title(soup)
         external_id = self._blackboard_external_id(item, title, due_time)
@@ -246,10 +247,12 @@ class DDLParser:
             if not has_explicit_year and due_time < now - timedelta(days=30):
                 try:
                     bumped = due_time.replace(year=due_time.year + 1)
-                    # Only accept the bump if the result is within 8 months from
-                    # now — avoids pushing genuinely past-due dates into a future
-                    # year when syncing mid-semester.
-                    if bumped <= now + timedelta(days=240):
+                    # Accept the bump only if the result lands inside a
+                    # symmetric window around "now": newer than 30 days ago
+                    # AND not more than 240 days in the future. Without the
+                    # lower bound the same input parses to different years
+                    # depending on today's date.
+                    if now - timedelta(days=30) < bumped <= now + timedelta(days=240):
                         due_time = bumped
                 except ValueError:
                     pass
@@ -298,19 +301,6 @@ class DDLParser:
         return "" if node is None else node.get_text(strip=True)
 
     @staticmethod
-    def _coerce_str(value: Any) -> str:
-        if value is None:
-            return ""
-        return value.strip() if isinstance(value, str) else str(value)
-
-    @staticmethod
-    def _coerce_external_id(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        text = value.strip() if isinstance(value, str) else str(value)
-        return text or None
-
-    @staticmethod
     def _format_description(kind: str, course_name: str) -> str:
         parts = []
         if kind:
@@ -324,7 +314,11 @@ class DDLParser:
         seen: set[str] = set()
         result: list[Task] = []
         for task in tasks:
-            key = task.external_id or f"{task.title}|{task.due_time.isoformat()}"
+            if task.external_id:
+                key = task.external_id
+            else:
+                due_str = task.due_time.isoformat() if task.due_time is not None else "no-due"
+                key = f"{task.title}|{due_str}"
             if key in seen:
                 continue
             seen.add(key)

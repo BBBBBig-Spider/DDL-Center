@@ -24,10 +24,12 @@ from app.config import (
     BB_REDIR_URL,
     IAAA_LOGIN_URL,
     IAAA_PUBKEY_URL,
+    PKU_VERIFY_SSL,
 )
 from app.network.network_errors import AuthError, ConnectionError, ParseError
 
-requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+if not PKU_VERIFY_SSL:
+    requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 
 @dataclass
@@ -123,7 +125,7 @@ def _campus_login(
     rand = f"{random.random():.16f}"
     url = f"{_https_url(redir_url)}?_rand={rand}&token={token}"
     try:
-        resp = session.get(url, timeout=10, allow_redirects=True, verify=False)
+        resp = session.get(url, timeout=10, allow_redirects=True, verify=PKU_VERIFY_SSL)
         resp.raise_for_status()
     except requests.RequestException as exc:
         raise ConnectionError(f"Campus login redirect failed: {exc}") from exc

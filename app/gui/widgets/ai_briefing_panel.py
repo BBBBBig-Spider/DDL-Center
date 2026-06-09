@@ -6,12 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from app.gui.theme import BORDER, INK, PKU_RED, PKU_RED_LIGHT, TEXT
-
-
-def get_field(obj, key: str, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
+from app.gui._helpers import get_field
 
 
 class AIBriefingPanel(QFrame):

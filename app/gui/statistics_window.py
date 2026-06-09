@@ -23,10 +23,7 @@ except Exception:
     Figure = None
 
 
-def get_field(obj, key: str, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
+from app.gui._helpers import get_field
 
 
 class MetricCard(QFrame):

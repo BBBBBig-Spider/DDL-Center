@@ -76,7 +76,63 @@ class DatabaseManager:
         if "seat" not in exam_cols:
             with conn:
                 conn.execute("ALTER TABLE exams ADD COLUMN seat TEXT NOT NULL DEFAULT ''")
+        self._relax_exams_course_id_not_null(conn)
         self._fix_wrong_year_due_times(conn)
+
+    @staticmethod
+    def _relax_exams_course_id_not_null(conn: sqlite3.Connection) -> None:
+        """Drop the legacy NOT NULL constraint on exams.course_id.
+
+        Older databases were created when course_id was required; the current
+        schema declares it nullable so manual / AI-created exams without a
+        linked course can be stored. SQLite cannot ALTER a column's NOT NULL,
+        so this rebuilds the table when the legacy constraint is detected.
+        """
+        rows = conn.execute("PRAGMA table_info(exams)").fetchall()
+        course_id_row = next((r for r in rows if r[1] == "course_id"), None)
+        if course_id_row is None:
+            return
+        # PRAGMA table_info: cid, name, type, notnull, dflt_value, pk
+        if not course_id_row[3]:
+            return  # already nullable
+
+        with conn:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE exams_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        course_id INTEGER,
+                        name TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        location TEXT NOT NULL DEFAULT '',
+                        seat TEXT NOT NULL DEFAULT '',
+                        exam_type TEXT NOT NULL DEFAULT 'other',
+                        source TEXT NOT NULL DEFAULT 'manual',
+                        external_id TEXT,
+                        raw_payload TEXT NOT NULL DEFAULT '',
+                        FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE RESTRICT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO exams_new (
+                        id, course_id, name, start_time, end_time, location,
+                        seat, exam_type, source, external_id, raw_payload
+                    )
+                    SELECT
+                        id, course_id, name, start_time, end_time, location,
+                        seat, exam_type, source, external_id, raw_payload
+                    FROM exams
+                    """
+                )
+                conn.execute("DROP TABLE exams")
+                conn.execute("ALTER TABLE exams_new RENAME TO exams")
+            finally:
+                conn.execute("PRAGMA foreign_keys = ON")
 
     @staticmethod
     def _fix_wrong_year_due_times(conn: sqlite3.Connection) -> None:
@@ -106,6 +162,11 @@ class DatabaseManager:
                 dt = datetime.fromisoformat(raw_dt)
             except ValueError:
                 continue
+            # The codebase stores naive datetimes by convention; if a tz-aware
+            # value ever sneaks in, drop the tz before comparing so the whole
+            # migration doesn't abort with TypeError.
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
             if dt.year != wrong_year:
                 continue  # not the classic bump pattern
             try:

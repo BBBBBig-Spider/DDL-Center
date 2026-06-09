@@ -3,12 +3,13 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, time
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -24,59 +25,7 @@ from PySide6.QtWidgets import (
 from app.gui.add_schedule_dialog import AddCourseDialog
 from app.gui.import_schedule_dialog import ImportScheduleDialog
 from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
-from app.config import SEMESTER_START
-
-
-def get_field(obj, key, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
-
-
-class DDLMarkerWidget(QFrame):
-    def __init__(self, task, parent=None):
-        super().__init__(parent)
-        self.task = task
-        self.expanded = False
-        self._init_ui()
-
-    def _init_ui(self) -> None:
-        self.setObjectName("ddlMarker")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(12)
-        self.setStyleSheet(
-            f"""
-            QFrame#ddlMarker {{
-                background-color: #FCE8E8;
-                border-left: 4px solid {PKU_RED};
-                border-radius: 4px;
-            }}
-            QFrame#ddlMarker QLabel {{
-                background-color: transparent;
-            }}
-            """
-        )
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 2, 6, 2)
-        layout.setSpacing(2)
-        self.title = QLabel("DDL")
-        self.title.setStyleSheet(f"color: {PKU_RED_DARK}; font-size: 10px; font-weight: 700;")
-        self.title.setVisible(False)
-        layout.addWidget(self.title)
-
-    def enterEvent(self, event) -> None:
-        task_title = str(get_field(self.task, "title", "未命名任务"))
-        due_time = get_field(self.task, "due_time")
-        due_text = due_time.strftime("%H:%M") if hasattr(due_time, "strftime") else str(due_time)[11:16]
-        self.title.setText(f"DDL {due_text} · {task_title}")
-        self.title.setVisible(True)
-        self.setFixedHeight(46)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:
-        self.title.setVisible(False)
-        self.setFixedHeight(12)
-        super().leaveEvent(event)
+from app.gui._helpers import get_field
 
 
 class ScheduleWidget(QWidget):
@@ -99,6 +48,7 @@ class ScheduleWidget(QWidget):
     def __init__(self, facade=None):
         super().__init__()
         self.facade = facade
+        self._reload_semester_settings()
         self.current_week = self._current_semester_week()
         self.custom_slots = []
         self.gui_task_arrangements = []
@@ -106,6 +56,20 @@ class ScheduleWidget(QWidget):
         self._course_color_cache: dict[int, str] = {}  # course_id -> hex color
         self._init_ui()
         self.refresh_schedule()
+
+    def _reload_semester_settings(self) -> None:
+        from app.config import SEMESTER_START
+        self._semester_start = SEMESTER_START
+        self._total_weeks = self.DEFAULT_DISPLAY_WEEKS
+        if self.facade and hasattr(self.facade, "get_semester_settings"):
+            try:
+                s = self.facade.get_semester_settings()
+                stored = s.get("start")
+                if stored:
+                    self._semester_start = date.fromisoformat(stored[:10])
+                self._total_weeks = max(1, min(30, int(s.get("total_weeks") or self.DEFAULT_DISPLAY_WEEKS)))
+            except Exception:
+                pass
 
     def _init_ui(self) -> None:
         self.main_layout = QVBoxLayout(self)
@@ -124,8 +88,37 @@ class ScheduleWidget(QWidget):
         self.grid_layout.setSpacing(8)
         self._setup_grid_frame()
 
+        self._ddl_overlay = QWidget(grid_container)
+        self._ddl_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._ddl_overlay.setStyleSheet("background: transparent;")
+        self._ddl_overlay.raise_()
+        self._grid_container = grid_container
+        grid_container.installEventFilter(self)
+
         scroll_area.setWidget(grid_container)
         self.main_layout.addWidget(scroll_area, stretch=1)
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, "_grid_container", None) and event.type() == event.Type.Resize:
+            self._ddl_overlay.setGeometry(0, 0, watched.width(), watched.height())
+            self._schedule_ddl_redraw()
+        return super().eventFilter(watched, event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # The overlay needs an initial geometry sync the first time the page
+        # becomes visible — eventFilter only fires on actual resize events.
+        self._schedule_ddl_redraw()
+
+    def _schedule_ddl_redraw(self) -> None:
+        """Defer the redraw to the next event-loop tick so cellRect is valid.
+
+        Calling _redraw_ddl_lines synchronously after refresh_schedule (which
+        adds/removes widgets in the grid) gives empty 0x0 rects from
+        grid_layout.cellRect — the layout hasn't actually run yet.
+        QTimer.singleShot(0, ...) lets Qt finish the layout pass first.
+        """
+        QTimer.singleShot(0, self._redraw_ddl_lines)
 
     def _setup_top_bar(self) -> None:
         top_bar = QHBoxLayout()
@@ -171,12 +164,26 @@ class ScheduleWidget(QWidget):
         import_button.clicked.connect(self.on_import_schedule_clicked)
         top_bar.addWidget(import_button)
 
+        semester_button = QPushButton("⚙️ 学期设置")
+        semester_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        semester_button.setStyleSheet(secondary_button_style())
+        semester_button.setToolTip("修改学期开始日期与总周数")
+        semester_button.clicked.connect(self.on_semester_settings_clicked)
+        top_bar.addWidget(semester_button)
+
+        refresh_button = QPushButton("🔄 刷新")
+        refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_button.setStyleSheet(secondary_button_style())
+        refresh_button.setToolTip("重新加载本周课程、考试和 DDL 红线")
+        refresh_button.clicked.connect(self.refresh_schedule)
+        top_bar.addWidget(refresh_button)
+
         week_label = QLabel("选择周次:")
         week_label.setStyleSheet(f"font-size: 13px; color: {TEXT}; background-color: transparent;")
         top_bar.addWidget(week_label)
 
         self.week_combo = QComboBox()
-        for week in range(1, self.DEFAULT_DISPLAY_WEEKS + 1):
+        for week in range(1, self._total_weeks + 1):
             self.week_combo.addItem(f"第 {week} 周", week)
         self.week_combo.setStyleSheet(
             f"""
@@ -288,6 +295,22 @@ class ScheduleWidget(QWidget):
         if dialog.exec() == ImportScheduleDialog.DialogCode.Accepted:
             self.refresh_schedule()
 
+    def on_semester_settings_clicked(self):
+        from app.gui.semester_settings_dialog import SemesterSettingsDialog
+        dialog = SemesterSettingsDialog(self.facade, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._reload_semester_settings()
+            # 重建 week_combo 下拉项
+            self.week_combo.blockSignals(True)
+            self.week_combo.clear()
+            for week in range(1, self._total_weeks + 1):
+                self.week_combo.addItem(f"第 {week} 周", week)
+            self.current_week = min(self.current_week, self._total_weeks)
+            idx = max(0, self.current_week - 1)
+            self.week_combo.setCurrentIndex(idx)
+            self.week_combo.blockSignals(False)
+            self.refresh_schedule()
+
     def set_gui_task_arrangements(self, arrangements) -> None:
         self.gui_task_arrangements = list(arrangements or [])
         self.refresh_schedule()
@@ -317,6 +340,8 @@ class ScheduleWidget(QWidget):
                 if not self._arrangement_occurs_this_week(arrangement):
                     continue
                 self._add_card_to_grid(arrangement, self._build_task_arrangement_card(arrangement))
+
+        self._schedule_ddl_redraw()
 
     def _update_ddl_header_badges(self, tasks) -> None:
         """Show DDL task info in day column headers (avoids grid cell conflicts)."""
@@ -396,7 +421,7 @@ class ScheduleWidget(QWidget):
 
     def _current_week_date_range(self) -> tuple[date, date]:
         from datetime import timedelta
-        start = SEMESTER_START + timedelta(days=(self.current_week - 1) * 7)
+        start = self._semester_start + timedelta(days=(self.current_week - 1) * 7)
         return start, start + timedelta(days=6)
 
     @staticmethod
@@ -665,27 +690,132 @@ class ScheduleWidget(QWidget):
         layout.addWidget(title)
         return card
 
-    def _build_ddl_marker(self, task):
-        due_time = get_field(task, "due_time")
-        if not hasattr(due_time, "date") or not hasattr(due_time, "time"):
-            return None
-        weekday = due_time.weekday() + 1
-        if not 1 <= weekday <= 7:
-            return None
-        row = self._time_to_grid_row(due_time.time())
-        return row, weekday
+    def _time_to_pixel_y(self, t: time) -> int | None:
+        """Map a clock time to a pixel y coordinate inside grid_container.
 
-    def _time_to_grid_row(self, t: time) -> int:
-        """Return the 1-based grid row for a clock time, snapping to the nearest period."""
-        for index, (_label, period_start, period_end) in enumerate(self.PERIODS, start=1):
+        Out-of-range times are clipped to the grid edges:
+          * t earlier than the first period start -> top of row 1
+          * t later than the last period end       -> bottom of the last row
+        Linear interpolation within a period; for time falling in the gap
+        between two periods, interpolates across the gap.
+        """
+        if t < self.PERIODS[0][1]:
+            top_cell = self.grid_layout.cellRect(1, 1)
+            if top_cell.height() <= 0:
+                return None
+            return top_cell.top()
+        if t > self.PERIODS[-1][2]:
+            bottom_cell = self.grid_layout.cellRect(len(self.PERIODS), 1)
+            if bottom_cell.height() <= 0:
+                return None
+            return bottom_cell.bottom()
+
+        def secs(x: time) -> int:
+            return x.hour * 3600 + x.minute * 60 + x.second
+
+        t_secs = secs(t)
+        for index, (_label, period_start, period_end) in enumerate(self.PERIODS):
             if period_start <= t <= period_end:
-                return index
-        # Between periods or outside: find the last period whose start <= t
-        best = 1
-        for index, (_label, period_start, _period_end) in enumerate(self.PERIODS, start=1):
-            if period_start <= t:
-                best = index
-        return best
+                cell = self.grid_layout.cellRect(index + 1, 1)
+                if cell.height() <= 0:
+                    return None
+                start_secs = secs(period_start)
+                end_secs = secs(period_end)
+                span = end_secs - start_secs
+                if span <= 0:
+                    return cell.top()
+                ratio = (t_secs - start_secs) / span
+                return int(cell.top() + ratio * cell.height())
+            # Check gap between this period and the next
+            if index + 1 < len(self.PERIODS):
+                next_start = self.PERIODS[index + 1][1]
+                if period_end < t < next_start:
+                    cell_a = self.grid_layout.cellRect(index + 1, 1)
+                    cell_b = self.grid_layout.cellRect(index + 2, 1)
+                    gap_start_y = cell_a.bottom()
+                    gap_end_y = cell_b.top()
+                    gap_height = gap_end_y - gap_start_y
+                    end_secs = secs(period_end)
+                    next_start_secs = secs(next_start)
+                    span = next_start_secs - end_secs
+                    if span <= 0:
+                        return gap_start_y
+                    ratio = (t_secs - end_secs) / span
+                    return int(gap_start_y + ratio * gap_height)
+        return None
+
+    def _redraw_ddl_lines(self) -> None:
+        for child in self._ddl_overlay.findChildren(QWidget):
+            child.setParent(None)
+            child.deleteLater()
+
+        # Make sure overlay covers the whole grid container; if eventFilter
+        # never fired (e.g. first-show before any resize), it would be 0x0.
+        if hasattr(self, "_grid_container"):
+            self._ddl_overlay.setGeometry(
+                0, 0, self._grid_container.width(), self._grid_container.height()
+            )
+            # Keep overlay above any course cards re-added by refresh_schedule.
+            self._ddl_overlay.raise_()
+
+        week_tasks = self._load_week_tasks()
+        print(f"[DDL] week={self.current_week}, tasks_in_week={len(week_tasks)}")
+        if not week_tasks:
+            return
+
+        self.grid_layout.activate()
+        drawn = 0
+
+        for task in week_tasks:
+            due_time = get_field(task, "due_time")
+            if not hasattr(due_time, "weekday"):
+                continue
+            weekday_col = due_time.weekday() + 1
+            if not 1 <= weekday_col <= 7:
+                continue
+            t = due_time.time()
+            y = self._time_to_pixel_y(t)
+            if y is None:
+                print(f"[DDL] skip {get_field(task, 'title', '')}: cellRect not ready for time {t}")
+                continue
+            title_str = get_field(task, "title", "")
+            if t < self.PERIODS[0][1]:
+                print(f"[DDL] {title_str}: clipped to top (time {t} < first period)")
+            elif t > self.PERIODS[-1][2]:
+                print(f"[DDL] {title_str}: clipped to bottom (time {t} > last period)")
+            col_rect = self.grid_layout.cellRect(1, weekday_col)
+            if col_rect.width() <= 0:
+                print(
+                    f"[DDL] skip {title_str}: cellRect not ready "
+                    f"(col={weekday_col}, rect={col_rect})"
+                )
+                continue
+            line = QFrame(self._ddl_overlay)
+            line.setStyleSheet(f"background-color: {PKU_RED}; border: none;")
+            line.setGeometry(col_rect.x(), y - 1, col_rect.width(), 2)
+            label_text = f"DDL {due_time.strftime('%H:%M')} · {title_str}"
+            label = QLabel(label_text, self._ddl_overlay)
+            label.setStyleSheet(
+                f"background-color: {PKU_RED}; color: white; padding: 1px 4px; "
+                "border-radius: 2px; font-size: 9px; font-weight: 700;"
+            )
+            label.adjustSize()
+            label_x = col_rect.x() + 2
+            label_y = y - label.height() - 1
+            overlay_h = self._ddl_overlay.height()
+            if label_y < 0:
+                # Line is at the very top — drop the label below the line.
+                label_y = y + 2
+            elif y + 2 + label.height() > overlay_h:
+                # Line is at the very bottom — keep the label above (default
+                # placement already does this, but be explicit so future code
+                # changes don't accidentally push it off-screen).
+                label_y = max(0, y - label.height() - 1)
+            label.move(label_x, label_y)
+            line.show()
+            label.show()
+            drawn += 1
+        print(f"[DDL] drawn {drawn} marker(s)")
 
     def _is_exact_period_slot(self, slot):
         start_time = self._coerce_time(get_field(slot, "start_time"))
@@ -791,17 +921,16 @@ class ScheduleWidget(QWidget):
         due_time = get_field(task, "due_time")
         if not hasattr(due_time, "date"):
             return False
-        days = (due_time.date() - SEMESTER_START).days
+        days = (due_time.date() - self._semester_start).days
         if days < 0:
             return False
         return days // 7 + 1 == self.current_week
 
-    @staticmethod
-    def _current_semester_week() -> int:
-        days = (date.today() - SEMESTER_START).days
+    def _current_semester_week(self) -> int:
+        days = (date.today() - self._semester_start).days
         if days < 0:
             return 1
-        return max(1, min(ScheduleWidget.DEFAULT_DISPLAY_WEEKS, days // 7 + 1))
+        return max(1, min(self._total_weeks, days // 7 + 1))
 
     @staticmethod
     def _badge_style(color):

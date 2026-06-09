@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TypeVar
 
 from app.models.task import Task
 from app.models.course import Course
@@ -21,6 +22,8 @@ from app.managers.ai_assistant_manager import AIAssistantManager
 
 
 __all__ = ["AppFacade"]
+
+_T = TypeVar("_T")
 
 
 class AppFacade:
@@ -45,6 +48,18 @@ class AppFacade:
         self.statistics_manager = statistics_manager
         self.sync_manager = sync_manager
         self.ai_assistant_manager = ai_assistant_manager
+
+    def _require(self, attr_name: str) -> _T:
+        """Return the named manager attribute or raise a uniform RuntimeError.
+
+        Centralizes the "X_manager not wired into AppFacade" boilerplate so
+        every method body can stay one line. Error string matches the previous
+        per-method messages so existing callers and tests keep working.
+        """
+        manager = getattr(self, attr_name, None)
+        if manager is None:
+            raise RuntimeError(f"{attr_name} not wired into AppFacade")
+        return manager
 
     # ─── 任务 ─────────────────────────────────────────────────
 
@@ -78,73 +93,53 @@ class AppFacade:
     # ─── 课程 / 考试 / 课表（Week 3 起补） ────────────────────
 
     def list_courses(self) -> list[Course]:
-        if self.course_manager is None:
-            raise RuntimeError("course_manager not wired into AppFacade")
-        return self.course_manager.list_courses()
+        return self._require("course_manager").list_courses()
 
     def list_exams(self, course_id: int | None = None) -> list[Exam]:
-        if self.exam_manager is None:
-            raise RuntimeError("exam_manager not wired into AppFacade")
-        return self.exam_manager.list_exams(course_id)
+        return self._require("exam_manager").list_exams(course_id)
 
     def create_exam(self, data: dict) -> int:
-        if self.exam_manager is None:
-            raise RuntimeError("exam_manager not wired into AppFacade")
-        if not hasattr(self.exam_manager, "create_exam"):
+        manager = self._require("exam_manager")
+        if not hasattr(manager, "create_exam"):
             raise RuntimeError("exam_manager does not support creating exams")
-        return self.exam_manager.create_exam(data)
+        return manager.create_exam(data)
 
     def list_schedule(self, weekday: int, week: int) -> list[ScheduleSlot]:
-        if self.schedule_manager is None:
-            raise RuntimeError("schedule_manager not wired into AppFacade")
-        return self.schedule_manager.list_slots(week, weekday)
+        return self._require("schedule_manager").list_slots(week, weekday)
 
     def get_free_slots(self, weekday: int, week: int) -> list[ScheduleSlot]:
-        if self.schedule_manager is None:
-            raise RuntimeError("schedule_manager not wired into AppFacade")
-        return self.schedule_manager.get_free_slots(weekday, week)
+        return self._require("schedule_manager").get_free_slots(weekday, week)
 
     def create_schedule_slot(self, data: dict) -> int:
-        if self.schedule_manager is None:
-            raise RuntimeError("schedule_manager not wired into AppFacade")
-        return self.schedule_manager.add_slot(data)
+        return self._require("schedule_manager").add_slot(data)
 
     def update_schedule_slot(self, slot_id: int, data: dict) -> None:
-        if self.schedule_manager is None:
-            raise RuntimeError("schedule_manager not wired into AppFacade")
-        self.schedule_manager.update_slot(slot_id, data)
+        self._require("schedule_manager").update_slot(slot_id, data)
 
     def delete_schedule_slot(self, slot_id: int) -> None:
-        if self.schedule_manager is None:
-            raise RuntimeError("schedule_manager not wired into AppFacade")
-        self.schedule_manager.delete_slot(slot_id)
+        self._require("schedule_manager").delete_slot(slot_id)
 
     # ─── 提醒 ─────────────────────────────────────────────────
 
     def generate_alerts(self) -> list[Alert]:
-        if self.alert_manager is None:
-            raise RuntimeError("alert_manager not wired into AppFacade")
-        return self.alert_manager.generate_alerts()
+        return self._require("alert_manager").generate_alerts()
 
     def list_all_alerts(self) -> list[Alert]:
-        if self.alert_manager is None or self.alert_manager.alert_repository is None:
+        manager = self._require("alert_manager")
+        if manager.alert_repository is None:
             raise RuntimeError("alert_repository not wired into AppFacade")
-        return self.alert_manager.alert_repository.list_all()
+        return manager.alert_repository.list_all()
 
     def recommend_for_task(self, task_id: int, *, week: int = 1, max_results: int = 5) -> list[ScheduleSlot]:
-        if self.recommendation_manager is None:
-            raise RuntimeError("recommendation_manager not wired into AppFacade")
-        return self.recommendation_manager.recommend_for_task(task_id, week=week, max_results=max_results)
+        return self._require("recommendation_manager").recommend_for_task(
+            task_id, week=week, max_results=max_results
+        )
 
     def arrange_task_at_slot(self, task_id: int, slot_obj) -> None:
-        if self.recommendation_manager is None:
-            raise RuntimeError("recommendation_manager not wired into AppFacade")
-        self.recommendation_manager.arrange_task_at_slot(task_id, slot_obj)
+        self._require("recommendation_manager").arrange_task_at_slot(task_id, slot_obj)
 
     def cancel_task_arrangement(self, task_id: int) -> None:
-        if self.recommendation_manager is None:
-            raise RuntimeError("recommendation_manager not wired into AppFacade")
-        self.recommendation_manager.cancel_task_arrangement(task_id)
+        self._require("recommendation_manager").cancel_task_arrangement(task_id)
 
     def get_task_arrangement(self, task_id: int) -> dict | None:
         if self.recommendation_manager is None:
@@ -159,14 +154,12 @@ class AppFacade:
     # ─── 同步 / 统计 ──────────────────────────────────────────
 
     def sync_from_teaching_site(self, username: str, password: str, otp_code: str = ""):
-        if self.sync_manager is None:
-            raise RuntimeError("sync_manager not wired into AppFacade")
-        return self.sync_manager.sync_from_teaching_site(username, password, otp_code=otp_code)
+        return self._require("sync_manager").sync_from_teaching_site(
+            username, password, otp_code=otp_code
+        )
 
     def get_statistics(self):
-        if self.statistics_manager is None:
-            raise RuntimeError("statistics_manager not wired into AppFacade")
-        return self.statistics_manager.get_statistics()
+        return self._require("statistics_manager").get_statistics()
 
     def purge_overdue_tasks(self) -> int:
         return self.task_manager.purge_overdue_tasks()
@@ -200,47 +193,39 @@ class AppFacade:
     # ─── AI 相关 ──────────────────────────────────────────────
 
     def ai_decompose_task(self, description: str, due_time: datetime) -> list[dict]:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        return self.ai_assistant_manager.decompose_task(description, due_time)
+        return self._require("ai_assistant_manager").decompose_task(description, due_time)
 
     def ai_chat(self, conversation_id: int | None, user_msg: str,
                 context_task_id: int | None = None) -> tuple[int, str]:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        return self.ai_assistant_manager.chat(conversation_id, user_msg, context_task_id)
+        return self._require("ai_assistant_manager").chat(
+            conversation_id, user_msg, context_task_id
+        )
 
     def ai_reset_conversation(self, conversation_id: int | None = None) -> int | None:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        return self.ai_assistant_manager.reset_conversation(conversation_id)
+        return self._require("ai_assistant_manager").reset_conversation(conversation_id)
 
     def ai_generate_briefing(self) -> str:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        return self.ai_assistant_manager.generate_briefing()
+        return self._require("ai_assistant_manager").generate_briefing()
 
     def ai_summarize_ddl(self, raw_text: str) -> str:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        return self.ai_assistant_manager.summarize_ddl(raw_text)
+        return self._require("ai_assistant_manager").summarize_ddl(raw_text)
+
+    def ai_parse_task_from_text(self, raw_text: str) -> dict:
+        return self._require("ai_assistant_manager").parse_task_from_text(raw_text)
+
+    def ai_parse_item_from_text(self, raw_text: str) -> dict:
+        return self._require("ai_assistant_manager").parse_item_from_text(raw_text)
 
     # ─── AI 设置 ──────────────────────────────────────────────
 
     def set_deepseek_api_key(self, key: str) -> None:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        self.ai_assistant_manager.set_api_key(key)
+        self._require("ai_assistant_manager").set_api_key(key)
 
     def get_deepseek_api_key(self) -> str | None:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        return self.ai_assistant_manager.get_api_key()
+        return self._require("ai_assistant_manager").get_api_key()
 
     def test_deepseek_api_key(self, key: str) -> bool:
-        if self.ai_assistant_manager is None:
-            raise RuntimeError("ai_assistant_manager not wired into AppFacade")
-        return self.ai_assistant_manager.test_api_key(key)
+        return self._require("ai_assistant_manager").test_api_key(key)
 
     def ai_is_available(self) -> bool:
         return (
@@ -252,3 +237,34 @@ class AppFacade:
         if self.ai_assistant_manager is None:
             return 0
         return self.ai_assistant_manager.today_token_usage()
+
+    # ─── 学期设置 ─────────────────────────────────────────────
+
+    def get_semester_settings(self) -> dict:
+        """Read semester start date and total weeks from setting_repository.
+
+        Falls back to SEMESTER_START / 20 when nothing has been written yet."""
+        from app.config import SEMESTER_START
+        setting_repository = getattr(self, "setting_repository", None)
+        start = SEMESTER_START.isoformat()
+        total_weeks = 20
+        if setting_repository is not None:
+            try:
+                stored_start = setting_repository.get("semester_start")
+                if stored_start:
+                    start = stored_start
+                stored_weeks = setting_repository.get("semester_total_weeks")
+                if stored_weeks:
+                    total_weeks = int(stored_weeks)
+            except Exception:
+                pass
+        return {"start": start, "total_weeks": total_weeks}
+
+    def set_semester_settings(self, *, start: str, total_weeks: int) -> None:
+        setting_repository = getattr(self, "setting_repository", None)
+        if setting_repository is None:
+            return
+        if start:
+            setting_repository.set("semester_start", start)
+        if isinstance(total_weeks, int) and 1 <= total_weeks <= 30:
+            setting_repository.set("semester_total_weeks", str(total_weeks))

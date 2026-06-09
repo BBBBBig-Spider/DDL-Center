@@ -407,7 +407,7 @@ class TaskRepository:
             """
             SELECT *
             FROM tasks
-            WHERE due_time <= ? AND status != 'done'
+            WHERE due_time <= ? AND status != 'done' AND is_hidden = 0
             ORDER BY due_time ASC
             """,
             (deadline.isoformat(),),

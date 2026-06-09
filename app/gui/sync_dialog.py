@@ -16,12 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.gui.theme import BORDER, INK, form_control_style, primary_button_style
-
-
-def get_field(obj, key: str, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
+from app.gui._helpers import get_field
 
 
 class SyncDialog(QDialog):

@@ -147,8 +147,9 @@ class MainWindow(QMainWindow):
         actions.addStretch()
 
         self.open_settings_button = QPushButton("AI 设置")
+        self.open_ai_create_button = QPushButton("✨ 智能创建")
         self.open_sync_button = QPushButton("同步教学网")
-        for button in [self.open_settings_button, self.open_sync_button]:
+        for button in [self.open_settings_button, self.open_ai_create_button, self.open_sync_button]:
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(primary_button_style())
             actions.addWidget(button)
@@ -187,6 +188,7 @@ class MainWindow(QMainWindow):
         self.nav_buttons["ai"].clicked.connect(lambda: self._switch_page("ai"))
         self.nav_buttons["sync"].clicked.connect(lambda: self._switch_page("sync"))
         self.open_settings_button.clicked.connect(self._open_settings)
+        self.open_ai_create_button.clicked.connect(self._open_ai_create_dialog)
         self.open_sync_button.clicked.connect(self._open_sync_dialog)
 
     def _switch_page(self, page_key: str) -> None:
@@ -218,6 +220,17 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(facade=self.facade, parent=self)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted and hasattr(self.briefing_panel, "refresh"):
             self.briefing_panel.refresh()
+
+    def _open_ai_create_dialog(self) -> None:
+        from app.gui.ai_create_task_dialog import AICreateDialog
+        dialog = AICreateDialog(self.facade, self)
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            if hasattr(self.task_list_page, "refresh_display"):
+                self.task_list_page.refresh_display()
+            if hasattr(self.schedule_page, "refresh_schedule"):
+                self.schedule_page.refresh_schedule()
+            if hasattr(self.briefing_panel, "refresh"):
+                self.briefing_panel.refresh()
 
     def _open_sync_dialog(self) -> None:
         dialog = SyncDialog(facade=self.facade, parent=self)

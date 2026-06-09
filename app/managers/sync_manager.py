@@ -14,6 +14,7 @@ from app.models.sync_record import SyncRecord
 from app.models.sync_result import SyncResult
 from app.models.task import Task
 from app.network.network_errors import NetworkError, SyncError
+from app.parsers._common import coerce_str
 
 
 class SyncManager:
@@ -145,61 +146,74 @@ class SyncManager:
         self.task_repository.purge_hidden_overdue(now)
 
     def _sync_schedule(self, slots: list[ScheduleSlot], result: SyncResult) -> None:
-        for slot in slots:
-            if not slot.external_id:
-                continue
-            payload = self._payload_from_slot(slot)
-            slot.course_id = self._ensure_course(payload, result)
-            old_record = self.sync_repository.get_record("schedule", slot.external_id)
-            raw_hash = self._hash_object(slot)
-            existing = self.schedule_repository.find_by_external_id(slot.external_id)
-
-            if existing is None:
-                self.schedule_repository.add(slot)
-                status = "new"
-                result.schedule_new += 1
-            elif old_record is not None and old_record.raw_hash == raw_hash:
-                slot.id = existing.id
-                status = "unchanged"
-                result.schedule_unchanged += 1
-            else:
-                slot.id = existing.id
-                self.schedule_repository.update(slot)
-                status = "updated"
-                result.schedule_updated += 1
-            self._record("schedule", slot.external_id, "schedule_slot", slot.id, raw_hash, status)
+        self._apply_with_record(
+            items=slots,
+            result=result,
+            payload_fn=self._payload_from_slot,
+            source_type="schedule",
+            local_type="schedule_slot",
+            repository=self.schedule_repository,
+            counter_prefix="schedule",
+        )
 
     def _sync_exams(self, exams: list[Exam], result: SyncResult) -> None:
-        for exam in exams:
-            if not exam.external_id:
+        self._apply_with_record(
+            items=exams,
+            result=result,
+            payload_fn=lambda exam: self._payload(exam.raw_payload),
+            source_type="exam",
+            local_type="exam",
+            repository=self.exam_repository,
+            counter_prefix="exams",
+        )
+
+    def _apply_with_record(
+        self,
+        *,
+        items,
+        result: SyncResult,
+        payload_fn,
+        source_type: str,
+        local_type: str,
+        repository,
+        counter_prefix: str,
+    ) -> None:
+        """Shared upsert-with-sync-record loop for schedule slots and exams.
+
+        Tasks deliberately do NOT use this path — task sync skips already-known
+        external_ids rather than updating them, and runs a hidden-overdue purge
+        afterwards (see ``_sync_tasks``).
+        """
+        for item in items:
+            if not item.external_id:
                 continue
-            payload = self._payload(exam.raw_payload)
-            exam.course_id = self._ensure_course(payload, result)
-            old_record = self.sync_repository.get_record("exam", exam.external_id)
-            raw_hash = self._hash_object(exam)
-            existing = self.exam_repository.find_by_external_id(exam.external_id)
+            payload = payload_fn(item)
+            item.course_id = self._ensure_course(payload, result)
+            old_record = self.sync_repository.get_record(source_type, item.external_id)
+            raw_hash = self._hash_object(item)
+            existing = repository.find_by_external_id(item.external_id)
 
             if existing is None:
-                self.exam_repository.add(exam)
+                repository.add(item)
                 status = "new"
-                result.exams_new += 1
+                setattr(result, f"{counter_prefix}_new", getattr(result, f"{counter_prefix}_new") + 1)
             elif old_record is not None and old_record.raw_hash == raw_hash:
-                exam.id = existing.id
+                item.id = existing.id
                 status = "unchanged"
-                result.exams_unchanged += 1
+                setattr(result, f"{counter_prefix}_unchanged", getattr(result, f"{counter_prefix}_unchanged") + 1)
             else:
-                exam.id = existing.id
-                self.exam_repository.update(exam)
+                item.id = existing.id
+                repository.update(item)
                 status = "updated"
-                result.exams_updated += 1
-            self._record("exam", exam.external_id, "exam", exam.id, raw_hash, status)
+                setattr(result, f"{counter_prefix}_updated", getattr(result, f"{counter_prefix}_updated") + 1)
+            self._record(source_type, item.external_id, local_type, item.id, raw_hash, status)
 
     def _ensure_course(self, payload: dict[str, Any], result: SyncResult) -> int | None:
-        external_id = self._coerce_str(payload.get("course_external_id"))
+        external_id = coerce_str(payload.get("course_external_id"))
         if not external_id:
             raw = payload.get("raw")
             if isinstance(raw, dict):
-                external_id = self._coerce_str(raw.get("course_external_id") or raw.get("courseId"))
+                external_id = coerce_str(raw.get("course_external_id") or raw.get("courseId"))
         if not external_id:
             return None
 
@@ -208,9 +222,9 @@ class SyncManager:
             return existing.id
 
         raw = payload.get("raw")
-        name = self._coerce_str(payload.get("course_name"))
+        name = coerce_str(payload.get("course_name"))
         if not name and isinstance(raw, dict):
-            name = self._coerce_str(raw.get("course") or raw.get("course_name"))
+            name = coerce_str(raw.get("course") or raw.get("course_name"))
         course = Course(
             name=name or external_id,
             external_id=external_id,
@@ -315,9 +329,3 @@ class SyncManager:
                 "raw_payload": obj.raw_payload,
             }
         return {"type": type(obj).__name__, "value": obj}
-
-    @staticmethod
-    def _coerce_str(value: Any) -> str:
-        if value is None:
-            return ""
-        return value.strip() if isinstance(value, str) else str(value)

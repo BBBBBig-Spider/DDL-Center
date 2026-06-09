@@ -15,12 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
-
-
-def get_field(obj, key: str, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
+from app.gui._helpers import get_field
 
 
 class AlertItemWidget(QFrame):

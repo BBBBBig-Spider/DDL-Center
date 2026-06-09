@@ -13,11 +13,13 @@ from urllib.parse import urljoin
 
 from app.network.auth_client import AuthSession
 from app.network.network_errors import ConnectionError
+from app.config import PKU_VERIFY_SSL
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
-requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+if not PKU_VERIFY_SSL:
+    requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 
 # Blackboard base URL
@@ -180,7 +182,7 @@ class TeachingSiteClient:
     @staticmethod
     def _get(session: AuthSession, url: str) -> str:
         try:
-            resp = session.session.get(url, timeout=15, verify=False)
+            resp = session.session.get(url, timeout=15, verify=PKU_VERIFY_SSL)
             resp.raise_for_status()
             return resp.text
         except requests.RequestException as exc:

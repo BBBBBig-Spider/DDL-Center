@@ -10,6 +10,7 @@ from bs4.element import Tag
 
 from app.models.exam import Exam
 from app.network.network_errors import ParseError
+from app.parsers._common import coerce_external_id, coerce_str
 
 
 class ExamParser:
@@ -77,7 +78,7 @@ class ExamParser:
         return exams
 
     def _build_exam_from_dict(self, entry: dict) -> Optional[Exam]:
-        name = self._coerce_str(entry.get("name") or entry.get("title"))
+        name = coerce_str(entry.get("name") or entry.get("title"))
         start_time = self._parse_datetime(entry.get("start_time") or entry.get("startTime"))
         end_time = self._parse_datetime(entry.get("end_time") or entry.get("endTime"))
         if not name or start_time is None:
@@ -90,10 +91,10 @@ class ExamParser:
         exam_type = self._normalize_exam_type(entry.get("exam_type") or entry.get("type"))
         raw_payload = json.dumps(
             {
-                "course_external_id": self._coerce_str(
+                "course_external_id": coerce_str(
                     entry.get("course_external_id") or entry.get("courseId")
                 ),
-                "course_name": self._coerce_str(entry.get("course") or entry.get("course_name")),
+                "course_name": coerce_str(entry.get("course") or entry.get("course_name")),
                 "raw": entry,
             },
             ensure_ascii=False,
@@ -103,11 +104,11 @@ class ExamParser:
             name=name,
             start_time=start_time,
             end_time=end_time,
-            location=self._coerce_str(entry.get("location")),
-            seat=self._coerce_str(entry.get("seat")),
+            location=coerce_str(entry.get("location")),
+            seat=coerce_str(entry.get("seat")),
             exam_type=exam_type,
             source="sync",
-            external_id=self._coerce_external_id(entry.get("external_id") or entry.get("id")),
+            external_id=coerce_external_id(entry.get("external_id") or entry.get("id")),
             raw_payload=raw_payload,
         )
 
@@ -129,19 +130,6 @@ class ExamParser:
     def _extract_text(parent: Tag, selector: str) -> str:
         node = parent.select_one(selector)
         return "" if node is None else node.get_text(strip=True)
-
-    @staticmethod
-    def _coerce_str(value: Any) -> str:
-        if value is None:
-            return ""
-        return value.strip() if isinstance(value, str) else str(value)
-
-    @staticmethod
-    def _coerce_external_id(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        text = value.strip() if isinstance(value, str) else str(value)
-        return text or None
 
     def _parse_datetime(self, value: Any) -> Optional[datetime]:
         if not isinstance(value, str) or not value.strip():

@@ -17,35 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.gui.theme import BORDER, INK, MUTED, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
-
-
-def get_field(obj, key: str, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
-
-
-def format_time_field(value) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value[:5]
-    if isinstance(value, (datetime, time)):
-        return value.strftime("%H:%M")
-    if hasattr(value, "strftime"):
-        return value.strftime("%H:%M")
-    return str(value)[:5]
-
-
-def duration_hours(slot_obj) -> float | None:
-    start = format_time_field(get_field(slot_obj, "start_time"))
-    end = format_time_field(get_field(slot_obj, "end_time"))
-    try:
-        start_dt = datetime.strptime(start, "%H:%M")
-        end_dt = datetime.strptime(end, "%H:%M")
-    except ValueError:
-        return None
-    return max(0.0, (end_dt - start_dt).total_seconds() / 3600)
+from app.gui._helpers import duration_hours, format_time_field, get_field
 
 
 def arrangement_from_slot(task_id: int, task_title: str, slot_obj, week: int | None = None) -> dict:

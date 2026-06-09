@@ -21,12 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.gui.theme import BORDER, INK, PKU_RED_LIGHT, TEXT, form_control_style, primary_button_style
-
-
-def get_field(obj, key: str, default=None):
-    if isinstance(obj, dict):
-        return obj.get(key, default)
-    return getattr(obj, key, default)
+from app.gui._helpers import get_field
 
 
 class TaskEditorDialog(QDialog):
@@ -75,7 +70,7 @@ class TaskEditorDialog(QDialog):
         form.addRow("截止时间:", self.due_time_input)
 
         self.estimated_hours_input = QSpinBox()
-        self.estimated_hours_input.setRange(1, 1000)
+        self.estimated_hours_input.setRange(0, 1000)
         self.estimated_hours_input.setSuffix(" 小时")
         self.estimated_hours_input.setValue(2)
         form.addRow("预计耗时:", self.estimated_hours_input)
@@ -147,7 +142,7 @@ class TaskEditorDialog(QDialog):
                 QDateTime(due_time.year, due_time.month, due_time.day, due_time.hour, due_time.minute)
             )
 
-        self.estimated_hours_input.setValue(int(float(get_field(self.task_data, "estimated_hours", 2) or 2)))
+        self.estimated_hours_input.setValue(max(0, int(float(get_field(self.task_data, "estimated_hours", 2) or 2))))
         priority_index = self.priority_combo.findData(get_field(self.task_data, "priority", 2))
         if priority_index >= 0:
             self.priority_combo.setCurrentIndex(priority_index)
@@ -192,7 +187,7 @@ class TaskEditorDialog(QDialog):
             lines.append(f"{index}. {sub_title}（{hours:g}h{date_text}）")
 
         if total_hours > 0:
-            self.estimated_hours_input.setValue(max(1, int(round(total_hours))))
+            self.estimated_hours_input.setValue(max(0, int(round(total_hours))))
         self.ai_result_label.setText("\n".join(lines))
         self.ai_result_label.show()
 
