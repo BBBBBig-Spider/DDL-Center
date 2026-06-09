@@ -1,7 +1,0 @@
-var goBackDirect = angular.module('dc.direct.goBackDirect', []);
-goBackDirect.directive("goback",function(){
-	return {
-		templateUrl : 'app/direct/tpl/goBack.html?_v=20200502',
-        replace :true
-    };
-});

@@ -1,7 +1,0 @@
-var footerDirect = angular.module('dc.direct.footerDirect', []);
-footerDirect.directive("footertpl",function(){
-	return {
-		templateUrl : 'app/direct/tpl/footer.html',
-        replace :true
-    };
-});
