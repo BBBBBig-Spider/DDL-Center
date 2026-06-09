@@ -1,0 +1,119 @@
+var passportEditCtrl = angular.module('dc.controller.abroadBiz.passportEditCtrl', []);
+passportEditCtrl.controller("passportEditController", ['$scope','$rootScope','$location','$http',function($scope, $rootScope, $location,$http) {
+			$scope.errorMsg = "";
+			$scope.psptInfo = null;
+			$scope.psptTypeOption = ["公务普通护照", "公务护照", "外交护照", "因公护照", "因私护照",
+					"因公往来港澳通行证", "因公港、澳通行证", "因私往来港澳通行证", "因私港、澳通行证",
+					"往来台湾通行证", "入台证"];
+			// 20190610增加了证照类型选项
+			$scope.uploadFlag = false;
+			$scope.psptImgFile = null;
+			$scope.savePassport = function() {
+				if ($scope.psptInfo != null && null != $scope.psptInfo.hzh
+						&& null != $scope.psptInfo.hzlb
+						&& null != $scope.psptInfo.qfrq
+						&& null != $scope.psptInfo.yxrq) {
+					if ($scope.checkDatePattern() == true) {
+						$http({
+							method : 'POST',
+							dataType : "json",
+							contentType : 'application/json; charset=UTF-8',
+							url : '/publicQuery/ctrl/common/depart/savePassports.do',
+							params : {
+								passports : "["
+										+ angular.toJson($scope.psptInfo) + "]"
+							}
+						}).success(function(response) {
+									if (response.success == true) {
+										$scope.errorMsg = null
+										$location.path("/abroadBiz");
+									} else {
+										$scope.errorMsg = response.msg;
+									}
+								}).error(function(e, code) {
+									throw (code);
+								});
+					}
+				} else {
+					$scope.errorMsg = "请填写必要的信息。";
+				}
+			}
+			$scope.checkDatePattern = function() {
+				var pattern = /^\d{4}-\d{2}-\d{2}$/;
+				if (null != $scope.psptInfo.qfrq) {
+					if (false == pattern.test($scope.psptInfo.qfrq)) {
+						$scope.errorMsg = "日期格式不正确";
+						return false;
+					}
+				}
+
+				if (null != $scope.psptInfo.yxrq) {
+					if (false == pattern.test($scope.psptInfo.yxrq)) {
+						$scope.errorMsg = "日期格式不正确";
+						return false;
+					}
+				}
+				$scope.errorMsg = "";
+				return true;
+			}
+			$scope.downloadPsptPic = function() {
+				if ($scope.psptInfo.hzh == null)
+					$scope.errorMsg = "请从列表页点击进入编辑页。";
+				else {
+					$("#exportForm")
+							.attr("action",
+									'/publicQuery/ctrl/common/depart/downloadPassportImg.do');
+					$("#exportForm>input[name=passportNo]")
+							.val($scope.psptInfo.hzh);
+					$("#exportForm").submit();
+				}
+			};
+			$scope.uploadPsptPic = function() {
+				if ($scope.psptInfo.hzh == null)
+					$scope.errorMsg = "请从列表页点击进入编辑页。";
+				else if ($scope.psptImgFile != null) {
+					var idx = $scope.psptImgFile.lastIndexOf(".");
+					var ext = $scope.psptImgFile.substring(idx + 1);
+					if ("PNG" === ext || "png" === ext) {
+						var formData = new FormData();
+						formData.append("passportNo", $scope.psptInfo.hzh);
+						formData.append("imgFile",
+								$("input[name=psptImg]")[0].files[0]);
+						$http({
+							method : 'POST',
+							url : '/publicQuery/ctrl/common/depart/uploadPassportImg.do',
+							headers : {
+								'Content-Type' : undefined
+							},
+							data : formData,
+							transformRequest : angular.identity
+						}).success(function(data, status) {
+									var success = data.success;
+									if (true == success) {
+										$scope.errorMsg = "上传成功。";
+									} else {
+										$scope.errorMsg = data.msg;
+									}
+								}).error(function(data, status) {
+									$scope.errorMsg = "上传失败。";
+								});
+					} else
+						$scope.errorMsg = "文件类型只允许PNG。";
+				} else {
+					$scope.errorMsg = "请先选择文件。";
+				}
+			};
+			// 初始化函数
+			var init = function() {
+				if ($rootScope.psptInfo != null) {
+					$scope.psptInfo = $rootScope.psptInfo;
+					$scope.psptInfo.isNew = "N";
+					$rootScope.psptInfo = null;
+				} else {
+					$scope.psptInfo = {
+						isNew : "Y"
+					};
+				}
+			};
+			init();
+		}]);

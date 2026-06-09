@@ -1,0 +1,190 @@
+/**
+ * custom msg 
+ * @authors YS
+ * @date    2017-12-19 17:35:13
+ * @version $Id$
+ */
+var Js={author:'Js',homepage:''};  
+//是否为ie浏览器  
+Js.IsIE=!!document.all;  
+//ie浏览器版本  
+Js.IEVersion=(function(){if(!Js.IsIE)return -1;try{return parseFloat(/msie ([\d\.]+)/i.exec(navigator.userAgent)[1]);}catch(e){return -1;}})();  
+//按id获取对象  
+Js.$=function(Id,isFrame){var o;if("string"==typeof(Id))o= document.getElementById(Id);else if("object"==typeof(Id))o= Id;else return null;return isFrame?(Js.IsIE?frames[Id]:o.contentWindow):o;}  
+//按标签名称获取对象  
+//页面的高和宽******************************  
+Js.isStrict=document.compatMode == "CSS1Compat";  
+Js.BodyScale={x:0,y:0,tx:0,ty:0};//（x，y）：当前的浏览器容器大小  （tx，ty）：总的页面滚动宽度和高度 
+Js.getClientHeight=function(){/*if(Js.IsIE)*/return Js.isStrict ? document.documentElement.clientHeight :document.body.clientHeight;/*else return self.innerHeight;*/}  
+Js.getScrollHeight=function(){var h=!Js.isStrict?document.body.scrollHeight:document.documentElement.scrollHeight;return Math.max(h,this.getClientHeight());}  
+Js.getHeight=function(full){return full?this.getScrollHeight():this.getClientHeight();}  
+Js.getClientWidth=function(){/*if(Js.IsIE)*/return Js.isStrict?document.documentElement.clientWidth:document.body.clientWidth;/*else return self.innerWidth;*/}  
+Js.getScrollWidth=function(){var w=!Js.isStrict?document.body.scrollWidth:document.documentElement.scrollWidth;return Math.max(w,this.getClientWidth());}  
+Js.getWidth=function(full){return full?this.getScrollWidth():this.getClientWidth();}  
+Js.initBodyScale=function(){Js.BodyScale.x=Js.getWidth(false);Js.BodyScale.y=Js.getHeight(false);Js.BodyScale.tx=Js.getWidth(true);Js.BodyScale.ty=Js.getHeight(true);} 
+//页面的高和宽******************************  
+Js.Msg={  
+    INFO:'info',  
+    ERROR:'error',  
+    WARNING:'warning',  
+    IsInit:false,  
+    timer:null,  
+    dvTitle:null,  
+    dvCT:null,  
+    dvBottom:null,  
+    dvBtns:null,  
+    lightBox:null,
+    backDiv:null,
+    dvMsgBox:null,  
+    defaultWidth:300,  
+    moveProcessbar:function(){  
+      var o=Js.$('dvProcessbar'),w=o.style.width;  
+      if(w=='')w=20;  
+      else{  
+        w=parseInt(w)+20;  
+        if(w>100)w=0;  
+      }  
+      o.style.width=w+'%';  
+    },  
+    InitMsg:function(width){  
+      //ie下不按照添加事件的循序来执行，所以要注意在调用alert等方法时要检测是否已经初始化IsInit=true       
+      var ifStr='<iframe src="javascript:false" mce_src="javascript:false" style="position:absolute; visibility:inherit; top:0px;left:0px;width:100%; height:100%; z-index:-1;'  
+          +'filter=\'progid:DXImageTransform.Microsoft.Alpha(style=0,opacity=0)\';"></iframe>',  
+      html='<div class="top"><div class="msg_right"><div class="title" id="dvMsgTitle"></div></div></div>'+  
+        '<div class="body"><div class="msg_right"><div class="ct" id="dvMsgCT"></div></div></div>'+  
+        '<div class="bottom" id="dvMsgBottom"><div class="msg_right"><div class="btn" id="dvMsgBtns"></div></div></div>';  
+      //蒙层
+      this.backDiv=document.createElement("div");  
+      this.backDiv.id="back_div"; 
+      document.body.appendChild(this.backDiv); 
+      //消息框
+      this.dvMsgBox=document.createElement("div");  
+      this.dvMsgBox.id="dvMsgBox";  
+      this.dvMsgBox.innerHTML+=html;        
+      document.body.appendChild(this.dvMsgBox);  
+      this.lightBox=document.createElement("div");  
+      this.lightBox.id="JslightBox";  
+      document.body.appendChild(this.lightBox);  
+      if(Js.IsIE&&Js.IEVersion<7){//加iframe层修正ie6下无法遮盖住select的问题  
+        this.lightBox.innerHTML+=ifStr;  
+        this.dvMsgBox.innerHTML+=ifStr;  
+      }  
+      this.dvBottom=Js.$('dvMsgBottom');  
+      this.dvBtns=Js.$('dvMsgBtns');  
+      this.dvCT=Js.$('dvMsgCT');  
+      this.dvTitle=Js.$('dvMsgTitle');  
+      this.IsInit=true;  
+    },  
+    checkDOMLast:function(){//此方法非常关键，要不无法显示弹出窗口。两个对象dvMsgBox和lightBox必须处在body的最后两个节点内  
+      if(document.body.lastChild!=this.lightBox){  
+        document.body.appendChild(this.dvMsgBox);  
+        document.body.appendChild(this.lightBox);  
+      }  
+    },  
+    createBtn:function(p,v,fn){  
+        var btn=document.createElement("input");  
+        btn.type="button";  
+        btn.className='btn';  
+        btn.value=v;  
+        btn.onmouseover=function(){this.className='btnfocus';}  
+        btn.onmouseout=function(){this.className='btn';}  
+        btn.onclick=function(){  
+          Js.Msg.hide();  
+          if(fn)fn(p);  
+        }  
+        return btn;  
+    },  
+    alert:function(msg){  
+      this.show({buttons:{yes:'确认'},title:'提示',msg:msg});  
+    },  
+    confirm:function(msg,fn,yes0,no0,nono){  
+      //fn为回调函数，参数和show方法的一致  
+    	var yes = yes0;
+    	var no = no0;
+    	if(!yes) {
+    		yes = '确认';
+    	}
+    	if(!no) {
+    		no = '取消';
+    	}
+    	if(nono === true) {
+    		this.show({buttons:{yes:yes},msg:msg,title:'提示',fn:fn});  
+    	} else {
+    		this.show({buttons:{yes:yes,no:no},msg:msg,title:'提示',fn:fn});  
+    	}
+      
+    },  
+    prompt:function(labelWord,defaultValue,txtId,fn){  
+      if(!labelWord)labelWord='请输入：';  
+      if(!defaultValue)defaultValue="";  
+      if(!txtId)txtId="msg_txtInput";  
+      this.show({title:'输入提示',msg:labelWord+'<input type="text" id="'+txtId+'" style="width:200px" value="'+defaultValue+'"/>',buttons:{yes:'确认',no:'取消'},fn:fn});  
+    },  
+    wait:function(msg,title){  
+      if(!msg)msg='正在处理..';  
+      this.show({title:title,msg:msg,wait:true});  
+    },  
+    show:function(cfg){  
+      //cfg:{title:'',msg:'',wait:true,icon:'默认为信息',buttons:{yes:'',no:''},fn:function(btn){回调函数,btn为点击的按钮，可以为yes，no},width:显示层的宽}  
+      //如果是等待则wait后面的配置不需要了。。   
+      if(!cfg)throw("没有指定配置文件！");  
+      //添加窗体大小改变监听  
+      if(Js.IsIE)window.attachEvent("onresize",this.onResize);  
+      else  window.addEventListener("resize",this.onResize,false);  
+        
+      if(!this.IsInit)this.InitMsg();//初始化dom对象  
+      else this.checkDOMLast();//检查是否在最后  
+        
+      //检查是否要指定宽，默认为300  
+      if(cfg.width)this.defaultWidth=cfg.width;  
+      this.dvMsgBox.style.width=this.defaultWidth+'px';  
+      //可以直接使用show方法停止为进度条的窗口  
+      if(this.timer){clearInterval(this.timer);this.timer=null;}        
+      this.dvTitle.innerHTML='';  
+      if(cfg.title)this.dvTitle.innerHTML=cfg.title;  
+      this.dvCT.innerHTML='';  
+      if(cfg.wait){  
+        if(cfg.msg)this.dvCT.innerHTML=cfg.msg;  
+        this.dvCT.innerHTML+='<div class="pro"><div class="bg" id="dvProcessbar"></div></div>';  
+        this.dvBtns.innerHTML='';  
+        this.dvBottom.style.height='10px';  
+        this.timer=setInterval(function(){Js.Msg.moveProcessbar();},1000);  
+      }  
+      else{  
+        //if(!cfg.icon)cfg.icon=Js.Msg.INFO;  
+        if(!cfg.buttons||(!cfg.buttons.yes&&!cfg.buttons.no)){  
+          cfg.buttons={yes:'确定'};  
+        }  
+        if(cfg.icon)this.dvCT.innerHTML='<div class="icon '+cfg.icon+'"></div>';  
+        if(cfg.msg)this.dvCT.innerHTML+=cfg.msg+'<div class="clear"></div>';  
+        this.dvBottom.style.height='45px';  
+        this.dvBtns.innerHTML='<div class="height"></div>';  
+        if(cfg.buttons.yes){  
+          this.dvBtns.appendChild(this.createBtn('yes',cfg.buttons.yes,cfg.fn));  
+          if(cfg.buttons.no)this.dvBtns.appendChild(document.createTextNode('　'));  
+        }  
+        if(cfg.buttons.no)this.dvBtns.appendChild(this.createBtn('no',cfg.buttons.no,cfg.fn));  
+      }  
+      Js.initBodyScale();  
+      this.backDiv.style.display='block';
+      this.dvMsgBox.style.display='block';  
+      this.lightBox.style.display='none';  
+      this.onResize(false);  
+    },  
+    hide:function(){  
+      this.backDiv.style.display='none';
+      this.dvMsgBox.style.display='none';  
+      this.lightBox.style.display='none';  
+      if(this.timer){clearInterval(this.timer);this.timer=null;}  
+      if(Js.IsIE)window.detachEvent('onresize',this.onResize);  
+      else window.removeEventListener('resize',this.onResize,false);  
+    },  
+    onResize:function(isResize){  
+       if(isResize)Js.initBodyScale();  
+       Js.Msg.lightBox.style.width=Js.BodyScale.tx+'px';  
+       Js.Msg.lightBox.style.height=Js.BodyScale.ty+'px';  
+       Js.Msg.dvMsgBox.style.top=240+'px';  
+       Js.Msg.dvMsgBox.style.left=Math.floor((Js.BodyScale.x-Js.Msg.dvMsgBox.offsetWidth)/2)+'px';  
+    }  
+
+};

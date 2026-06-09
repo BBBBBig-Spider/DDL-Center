@@ -1,0 +1,157 @@
+var faceIdentifyCtrl = angular.module('dc.controller.faceIdentify.faceIdentifyCtrl', []);	
+faceIdentifyCtrl.controller("faceIdentifyController",['$scope','$http',function($scope,$http){
+	$scope.errorMsg=null;
+	$scope.currentFile = null;
+	$scope.imageSize = 0;
+	$scope.running=false;
+	$scope.imageType = "png";
+		
+	$scope.success = null;
+	$scope.result=[];
+		
+	$scope.setFile = function(element) {
+		$scope.currentFile = element.files[0];
+		$scope.imageSize = $scope.currentFile.size;
+		var fileName = $scope.currentFile.name.split('.');
+		$scope.imageType = fileName[fileName.length-1];
+			
+		EXIF.getData($scope.currentFile, function() {  
+			EXIF.getAllTags(this);   
+		    Orientation = EXIF.getTag(this, 'Orientation');   
+		});  
+			
+		var reader = new FileReader();
+		reader.onload = function(event) {
+			if('jpg'!=$scope.imageType.toLowerCase()){
+				$("#myImage").attr("src", "/publicQuery/img/icon-my.png");
+				$scope.errorMsg="上传失败！仅支持jpg类型的图片上传。";
+			}else if($scope.imageSize>10*1024*1024){
+				$("#myImage").attr("src", "/publicQuery/img/icon-my.png");
+				$scope.errorMsg="上传失败！上传图片过大，请重新选择。";
+			}else{
+				$scope.preImage(event.target.result,function(){
+					var expectWidth = this.naturalWidth;  
+		            var expectHeight = this.naturalHeight;
+		            if (this.naturalWidth > this.naturalHeight && this.naturalWidth > 450) {  
+		            	expectWidth = 450;  
+		                expectHeight = expectWidth * this.naturalHeight / this.naturalWidth;  
+		            } else if (this.naturalHeight > this.naturalWidth && this.naturalHeight > 600) {  
+		                expectHeight = 600;  
+		                expectWidth = expectHeight * this.naturalWidth / this.naturalHeight;  
+		            }
+		            var canvas = document.createElement("canvas");  
+		            var ctx = canvas.getContext("2d");
+		            canvas.width = expectWidth;  
+		            canvas.height = expectHeight;
+		            ctx.drawImage(this, 0, 0, expectWidth, expectHeight);
+		                
+		            var base64 = canvas.toDataURL("image/jpeg", 1);
+		            var image1 = new Image(); //创建一个Image对象，实现图片的预下载
+		    		image1.src = base64;
+		    		image1.onload = function(){
+		    			base64 = canvas.toDataURL("image/jpeg", 1);
+			            $("#myImage").attr("src", base64);
+			               
+				        $scope.errorMsg="";
+				        $scope.success = null;
+				            
+				        var formData=new FormData();
+						formData.append("imgContent",base64.split(',')[1]);
+						formData.append("imgType",$scope.imageType);
+						$scope.running = true;
+						$http({
+							method: 'POST',
+						    headers: {
+						    	'Content-Type': undefined
+						    },
+						    url: '/publicQuery/ctrl/common/faceIdentify/query.do',
+						    data:  formData,
+						    transformRequest: angular.identity
+						}).success(function(data) {
+						    $scope.running = false;
+						    $scope.success = data.success;
+						    if($scope.success){
+						    	$scope.result= data.result;
+						    }else{
+						        $scope.errorMsg=data.msg||data.message||data.errMsg||data.errorMsg;
+						    }
+						}).error(function() {
+						    $scope.running = false;
+						    $scope.success = false;
+						    $scope.errorMsg="服务器没有响应，请稍候再试。";
+						});
+		    		};
+				});
+			}
+			$scope.$apply();
+		};
+		reader.readAsDataURL($scope.currentFile);
+	};
+			
+	$scope.preImage=function(url,callback){
+		var image = new Image(); //创建一个Image对象，实现图片的预下载
+		image.src = url;
+		if (image.complete) { // 如果图片已经存在于浏览器缓存，直接调用回调函数
+			callback.call(image);
+		    return; // 直接返回，不用再处理onload事件
+		}
+		image.onload = function () { //图片下载完毕时异步调用callback函数。
+			callback.call(image);//将回调函数的this替换为Image对象
+		};
+	};
+		
+	$scope.rotateImgage=function(img,direction,canvas) {    
+		var min_step = 0;    
+		var max_step = 3;    
+		if (img == null) return;    
+		//img的高度和宽度不能在img元素隐藏后获取，否则会出错    
+		var height = img.height;    
+		var width = img.width; 
+		var step = 2;   
+		if (step == null) {    
+		    step = min_step;    
+		}    
+		if (direction == 'right') {    
+		    step++;    
+		    //旋转到原位置，即超过最大值    
+		    step > max_step && (step = min_step);    
+		} else {    
+		    step--;    
+		    step < min_step && (step = max_step);    
+		}         
+		//旋转角度以弧度值为参数    
+		var degree = step * 90 * Math.PI / 180;    
+		var ctx = canvas.getContext("2d");
+		switch (step) {    
+		    case 0:    
+		    	canvas.width = width;    
+		        canvas.height = height;    
+		        ctx.drawImage(img, 0, 0);    
+		        break;    
+		    case 1:    
+		    	canvas.width = height;    
+		        canvas.height = width;    
+		        ctx.rotate(degree);    
+		        ctx.drawImage(img, 0, -height);    
+		        break;    
+		    case 2:    
+		    	canvas.width = width;    
+		        canvas.height = height;    
+		        ctx.rotate(degree);    
+		        ctx.drawImage(img, -width, -height);    
+		        break;    
+		    case 3:    
+		    	canvas.width = height;    
+		        canvas.height = width;    
+		        ctx.rotate(degree);    
+		        ctx.drawImage(img, -width, 0);    
+		        break;    
+		}    
+	};  
+		
+	//初始化函数
+	var init = function(){
+	    $("#myImage").attr("src", "/publicQuery/img/icon-my.png");
+	};
+	init();
+}]);

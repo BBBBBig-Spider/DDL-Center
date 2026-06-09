@@ -1,0 +1,31 @@
+@charset "UTF-8";
+/**
+ * message css
+ * @authors ys
+ * @date    2017-12-19 17:36:29
+ * @version $Id$
+ */
+/* 20200416 Replace all #8f000b with #9b0000 */
+#dvMsgBox{display:none;position:fixed;font-size:14px;width:300px;overflow:hidden;z-index:1118; border:1px solid #a10000;}  
+#dvMsgBox .top{height:30px;background-color: #9b0000;float:left; width:100%;}  
+#dvMsgBox .top .msg_right{height:100%;padding-right:6px;}  
+#dvMsgBox .top .msg_right .title{padding-left:10px;height:100%;line-height:29px;color:#fff;vertical-align:middle;font-weight:bold;overflow:hidden;}  
+#dvMsgBox .body{background:#fff;padding-left:10px;}  
+#dvMsgBox .body .msg_right{background:#fff;padding-right:2px;}  
+#dvMsgBox .body .msg_right .ct{padding: 60px 0 20px 0;vertical-align:middle;width:100%; text-align:center;}  
+#dvMsgBox .body .msg_right .ct .pro{width:280px;border:solid 1px #6593cf;height:25px;background:#ffffff;line-height:23px;overflow:hidden;}  
+#dvMsgBox .body .msg_right .ct .pro .bg{width:0%;height:100%;background:#c9dffc;}  
+#dvMsgBox .bottom{background:#fff;padding-left:6px}  
+#dvMsgBox .bottom .msg_right{height:100%;padding-right:6px;}  
+input.btn{width:80px; cursor:pointer; color:#fff; border:none; font-size:14px;height:30px; line-height:28px;text-align:center;background-color: #9b0000;margin:0 auto;-webkit-appearance:none;}  
+input.btnfocus{width:80px; cursor:pointer; color:#fff; border:none; font-size:14px;height:30px; line-height:28px;text-align:center;background-color: #9b0000;margin:0 auto;-webkit-appearance:none;}  
+#dvMsgBox .icon{width:32px;height:32px;float:left;margin-right:10px;}
+#dvMsgBox .error{background:url(icon-error.gif) no-repeat;}  
+#dvMsgBox .info{background:url(icon-info.gif) no-repeat;}  
+#dvMsgBox .warning{background:url(icon-warning.gif) no-repeat;}  
+#dvMsgBox .clear{clear:both;}  
+#dvMsgBox .height{height:7px;line-height:7px;}  
+#ShowBolightBox{display:none;-moz-opacity:0.5;filter:alpha(opacity=50);opacity:0.5;background-color:#000000;z-index:100;position:absolute;left:0px;top:0px;}
+#dvMsgBtns{ text-align:center; width:100%;}
+/* 蒙层 */
+#back_div {position: fixed;  top: 0%;  left: 0%;  width: 100%;  height: 100%;  background-color: black;  z-index:1115;  -moz-opacity: 0.5;  opacity:.70;  filter: alpha(opacity=70);}

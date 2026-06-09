@@ -1,0 +1,193 @@
+var personQueryCtrl = angular.module('dc.controller.personQuery.personQueryCtrl', []);	
+personQueryCtrl.controller("personQueryController",['$scope','$location','$http',function($scope,$location,$http){
+	$scope.running = false;
+	$scope.errorMsg = "";
+	$scope.deptList=null;
+	$scope.persons=null;
+	$scope.personCount=0;
+		
+	$scope.deptId = "";
+	$scope.name = "";
+	$scope.personType = "在职";
+		
+	$scope.getDeptList = function(){
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/common/util/retrDeptList.do'
+	    }).success(function(response){
+	       	if(response.success==true){
+	       		$scope.deptList = response.rows;
+	       		$scope.getPrevResult();
+	        }
+	    }).error(function(){
+	       $scope.deptList = null;
+		   $scope.errorMsg="服务器没有响应";
+	    });
+	};
+	var prevDeptText="";
+	$scope.changeDeptText = function(){		
+		if($("#deptId li.selected").index()<0 ||($scope.deptText!=null && $scope.deptText.length<prevDevDeptText.length )){
+			$("#deptId").show();
+			$("#deptId li").removeClass("selected");
+			$scope.deptId ="";
+		}
+		prevDevDeptText = $scope.deptText;
+	};
+	
+	$scope.selectDept = function(item){
+		$("#deptId").hide();
+		$scope.deptId = item.id;
+		$("#deptText").val(item.name);
+		$scope.deptText = item.name;
+	};
+	
+	$scope.down2Select = function(e){
+		if(e.keyCode==38){
+			var idx = $("#deptId li.selected").index();
+			if(idx>0){
+				$("#deptId li").removeClass("selected");
+				$("#deptId li:eq("+(idx-1)+")").addClass("selected");
+				if($("#deptId li:eq("+(idx-1)+")").position().top<=0){
+					var t = $("#deptId").scrollTop();
+					$("#deptId").scrollTop(t-28);
+				}
+			}
+		}else if(e.keyCode==40){
+			$("#deptId").show();
+			var idx = $("#deptId li.selected").index();
+			if(idx<$("#deptId li").length-1){
+				$("#deptId li").removeClass("selected");
+				$("#deptId li:eq("+(idx+1)+")").addClass("selected");
+				if($("#deptId li:eq("+(idx+1)+")").position().top>=140){
+					var t = $("#deptId").scrollTop();
+					$("#deptId").scrollTop(t+28);
+				}
+			}
+		}else if(e.keyCode==13){
+			$("#deptId").hide();
+			var idx = $("#deptId li.selected").index();
+			var deptId = $("#deptId li:eq("+idx+")").attr("value");
+			var deptName = $("#deptId li:eq("+idx+")").text();
+			$scope.deptId = deptId;
+			$("#deptText").val(deptName);
+			$scope.deptText = deptName;
+		}
+	};
+	
+	$scope.retrPersons = function(){
+		if(""!=$scope.deptId||""!=$scope.name){
+			$scope.running=true;
+			$http({
+		    	method:'POST',
+		        dataType: "json",
+		        contentType:'application/json; charset=UTF-8',
+		        url:'/publicQuery/ctrl/common/personQuery/query.do',
+		        data:{
+		            nameAbbr:$scope.nameAbbr,
+		            deptId:$scope.deptId,
+		            deptName:$scope.deptText,
+		            name:$scope.name,
+		            personType:$scope.personType
+		        },
+		        headers:{
+		        	'Content-Type':'application/json'
+		        }
+		    }).success(function(response){
+		    	$scope.running=false;
+		        if(response.success==true){
+		        	$scope.persons = response.rows;
+		        	$scope.personCount = response.results;
+		        	$scope.errorMsg=response.msg;
+		       	}else{
+		        	$scope.persons = null;
+		        	$scope.personCount = 0;
+		        	$scope.errorMsg=response.msg;
+		        }
+		    }).error(function(){
+		    	$scope.running=false;
+		    	$scope.persons = null;
+		        $scope.personCount = 0;
+		        $scope.errorMsg="服务器没有响应";
+		    });
+		}else{
+			$scope.persons = null;
+        	$scope.personCount = 0;
+			$scope.errorMsg="前三项查询条件不能全为空";
+		}
+	};
+	
+	$scope.getPrevResult = function(){
+		$scope.running=true;
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/common/personQuery/getPrevResult.do'
+	   	}).success(function(response){
+	        $scope.running=false;
+	        if(response.success==true){
+	        	$scope.deptId = response.deptId;
+        		$scope.deptText = response.deptName;
+        		$scope.name = response.name;
+        		$scope.personType =  response.personType;
+	        	$scope.persons = response.rows;
+		        $scope.personCount = response.results;
+	        	$scope.errorMsg = response.msg;
+	        }else{
+	        	$scope.deptId = null;
+        		$scope.deptText = null;
+        		$scope.name = null;
+        		$scope.personType =  null;
+	        	$scope.persons =null;
+		        $scope.personCount = 0;
+	        	$scope.errorMsg = response.msg;
+	        }
+	  	}).error(function(){
+	        $scope.running=false;
+	        $scope.deptId = null;
+        	$scope.deptText = null;
+        	$scope.name = null;
+        	$scope.personType =  null;
+	        $scope.persons =null;
+		    $scope.personCount = 0;
+	        $scope.errorMsg="服务器没有响应";
+	    });
+	};
+	
+	$scope.showDetail = function(itemNo){
+		$http({
+			method:'GET',
+		    dataType: "json",
+		    contentType:'application/json; charset=UTF-8',
+		    url:'/publicQuery/ctrl/common/personQuery/getQueryRole.do'
+		}).success(function(response){
+		    if(response.success==true){
+		    	$location.path("/personQuery/detail/"+itemNo+"/");
+		    }
+		}).error(function(){
+		    $scope.errorMsg="服务器没有响应";
+		});
+	};
+	
+	$scope.enter2Query=function(e){
+		if(e.which==13||e.keyCode==13){
+			$scope.retrPersons();
+		}
+	};
+		
+    //初始化函数
+    var init = function() {
+        $scope.getDeptList();
+        /**$scope.nameAbbr = null;
+        $scope.deptId = getCookie("PERSON_QUERY_DEPT_ID");
+        $scope.deptText = getCookie("PERSON_QUERY_DEPT_NAME");
+        $scope.name = getCookie("PERSON_QUERY_NAME");
+        $scope.personType =  getCookie("PERSON_QUERY_PERSON_TYPE");
+        if(""!=$scope.nameAbbr || ""!=$scope.deptId||""!=$scope.name){
+        	$scope.retrPersons();
+        }**/
+    };
+    init();
+}]);

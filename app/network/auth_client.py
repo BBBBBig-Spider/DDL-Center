@@ -80,6 +80,7 @@ def _iaaa_login(
     encrypted_password: str,
     appid: str,
     redir_url: str,
+    otp_code: str = "",
 ) -> str:
     """POST to IAAA and return the token string."""
     payload = {
@@ -88,6 +89,8 @@ def _iaaa_login(
         "password": encrypted_password,
         "redirUrl": redir_url,
     }
+    if otp_code:
+        payload["otpCode"] = otp_code
     headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}
 
     try:
@@ -148,7 +151,7 @@ class AuthClient:
         self._session: requests.Session | None = None
         self._auth_session: AuthSession | None = None
 
-    def login(self, username: str, password: str) -> AuthSession:
+    def login(self, username: str, password: str, otp_code: str = "") -> AuthSession:
         """
         Authenticate with IAAA and perform campusLogin for the target app.
         Returns an AuthSession containing the token and a cookie-bearing session.
@@ -158,7 +161,7 @@ class AuthClient:
 
         pub_key = _fetch_rsa_public_key(session)
         encrypted_pwd = _rsa_encrypt(pub_key, password)
-        token = _iaaa_login(session, username, encrypted_pwd, self._appid, self._redir_url)
+        token = _iaaa_login(session, username, encrypted_pwd, self._appid, self._redir_url, otp_code)
         _campus_login(session, token, self._redir_url)
 
         self._session = session

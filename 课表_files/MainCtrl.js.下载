@@ -1,0 +1,40 @@
+var mainCtrl = angular.module('dc.mainCtrl', []);	
+mainCtrl.controller('mainController' ,['$scope','$rootScope','$http',function ($scope,$rootScope,$http) {	
+	//定义全局数据
+	$rootScope.loginFlag = false;
+	$rootScope.userId = null;
+	$rootScope.userName = null;
+	$rootScope.accessFromApp = "";
+	
+	$scope.isUserLogged = function(){
+		$http({
+			method:'GET',
+            dataType: "json",
+            contentType:'application/json; charset=UTF-8',
+            url:'/publicQuery/isUserLogged.do'
+		}).success(function(response) {
+		    var success = response.success;
+		    if(success){
+		    	$rootScope.loginFlag = response.loginFlag;
+		    	$rootScope.userName = response.userName;
+		    	$rootScope.userId = response.userId;
+		    	$rootScope.accessFromApp = response.accessFromApp;
+		    }else{
+		    	$rootScope.loginFlag = false;
+		    	$rootScope.userName = null;
+		    	$rootScope.accessFromApp = null;
+		    }
+		}).error(function() {
+			$rootScope.loginFlag = false;
+			$rootScope.userName = null;
+			$rootScope.accessFromApp = null;
+		});	
+	};
+	
+	//初始化函数
+    var init = function(){
+    	$scope.isUserLogged();
+    };
+    init();
+	
+}]);

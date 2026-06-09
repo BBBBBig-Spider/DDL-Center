@@ -1,0 +1,39 @@
+var certificatePhotoCtrl = angular.module('dc.controller.certificatePhoto.certificatePhotoCtrl',[]);
+certificatePhotoCtrl.controller("certificatePhotoController", ['$scope','$routeParams','$http',function($scope,$routeParams,$http) {
+	$scope.errorMsg = "";
+	$scope.picture = "";
+	$scope.stuType = $routeParams.stuType;
+	$scope.stuTypeName = "";
+	$scope.sharePicture = function() {
+		$http({
+			method : 'GET',
+			dataType : "json",
+			contentType : 'application/json; charset=UTF-8',
+			url : '/publicQuery/ctrl/common/certificatePhoto/getToken.do'
+		}).success(function(response) {
+			var url = "";
+			if("YJS"==$scope.stuType){
+				$scope.stuTypeName = "研究生";
+				url = "https://simso.pku.edu.cn/sgims/sharePictureYJ.do?token=";
+			}else if("BKS"==$scope.stuType){
+				$scope.stuTypeName = "本科生";
+				url = "https://simso.pku.edu.cn/sgims/sharePictureBK.do?token=";
+			}
+			if (response.success == true) {
+				$scope.picture = url + response.token;
+				$scope.errorMsg = null;
+			} else {
+				$scope.picture = null;
+				$scope.errorMsg = response.errMsg || response.msg;
+			}
+		}).error(function() {
+			$scope.errorMsg = "服务器没有响应";
+		});
+	};
+
+	// 初始化函数
+	var init = function() {
+		$scope.sharePicture();
+	};
+	init();
+}]);

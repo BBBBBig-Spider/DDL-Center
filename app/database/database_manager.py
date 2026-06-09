@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from app.config import DB_PATH
 
@@ -52,14 +53,73 @@ class DatabaseManager:
         if not self.schema_path.exists():
             raise FileNotFoundError(f"schema.sql not found at: {self.schema_path}")
 
-        # 使用 Pathlib 的 read_text() 更现代、更简洁，自动处理文件打开与关闭
         schema_sql: str = self.schema_path.read_text(encoding="utf-8")
 
         conn: sqlite3.Connection = self.get_connection()
-        
-        # 使用上下文管理器自动处理 commit 和 rollback
+
         with conn:
             conn.executescript(schema_sql)
+
+        self._run_migrations(conn)
+
+    def _run_migrations(self, conn: sqlite3.Connection) -> None:
+        """Apply incremental schema migrations that cannot be expressed as CREATE IF NOT EXISTS."""
+        cursor = conn.execute("PRAGMA table_info(tasks)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        if "is_hidden" not in existing_cols:
+            with conn:
+                conn.execute(
+                    "ALTER TABLE tasks ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0"
+                )
+        cursor = conn.execute("PRAGMA table_info(exams)")
+        exam_cols = {row[1] for row in cursor.fetchall()}
+        if "seat" not in exam_cols:
+            with conn:
+                conn.execute("ALTER TABLE exams ADD COLUMN seat TEXT NOT NULL DEFAULT ''")
+        self._fix_wrong_year_due_times(conn)
+
+    @staticmethod
+    def _fix_wrong_year_due_times(conn: sqlite3.Connection) -> None:
+        """Correct sync tasks whose due_time was stored with an off-by-one year.
+
+        The DDL parser used to bump any no-explicit-year date that appeared >30
+        days in the past by +1 year unconditionally, which turned a genuine
+        overdue date (e.g. 2026-03-16) into a far-future date (2027-03-16).
+        This migration finds such rows and rolls the year back by exactly 1.
+
+        We only touch tasks where:
+          - year stored == current year + 1  (the classic off-by-one bump)
+          - rolling back by 1 year gives a date in the past  (genuinely overdue)
+        This leaves legitimate near-future tasks (year == current year) untouched.
+        """
+        now = datetime.now()
+        wrong_year = now.year + 1
+        rows = conn.execute(
+            "SELECT id, due_time FROM tasks WHERE source = 'sync' AND is_hidden = 0"
+        ).fetchall()
+        to_fix: list[tuple[str, int]] = []
+        for row in rows:
+            raw_dt = row["due_time"]
+            if not raw_dt:
+                continue
+            try:
+                dt = datetime.fromisoformat(raw_dt)
+            except ValueError:
+                continue
+            if dt.year != wrong_year:
+                continue  # not the classic bump pattern
+            try:
+                corrected = dt.replace(year=dt.year - 1)
+            except ValueError:
+                continue
+            if corrected < now:
+                # Rolling back confirms this date is genuinely in the past
+                to_fix.append((corrected.isoformat(sep=" "), row["id"]))
+        if to_fix:
+            with conn:
+                conn.executemany(
+                    "UPDATE tasks SET due_time = ? WHERE id = ?", to_fix
+                )
 
     def close(self) -> None:
         """

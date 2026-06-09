@@ -6,6 +6,7 @@ from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QVBoxLayout, QHBoxLayout, QWidget
 
 from app.gui.task_list_widget import TaskCardWidget
+from app.gui.theme import INK, PKU_GOLD, PKU_RED, TEXT
 
 
 def get_field(obj, key, default=None):
@@ -38,12 +39,12 @@ class TimelineSectionWidget(QFrame):
         content_layout.setContentsMargins(0, 5, 0, 15)
 
         section_label = QLabel(f"{self.title} ({len(self.tasks)})" if self.tasks else self.title)
-        section_label.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {self.color};")
+        section_label.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {self.color}; background-color: transparent;")
         content_layout.addWidget(section_label)
 
         if not self.tasks:
             empty_label = QLabel("当前时段没有任务")
-            empty_label.setStyleSheet("color: #999; font-size: 12px; font-style: italic; padding-left: 5px;")
+            empty_label.setStyleSheet("color: #999; font-size: 12px; font-style: italic; padding-left: 5px; background-color: transparent;")
             content_layout.addWidget(empty_label)
         else:
             for task in self.tasks:
@@ -88,8 +89,8 @@ class TimelineWidget(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(12, 12, 12, 12)
 
-        title_label = QLabel("Timeline")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title_label = QLabel("时间轴")
+        title_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {INK}; background-color: transparent;")
         main_layout.addWidget(title_label)
 
         self.scroll_area = QScrollArea()
@@ -114,10 +115,10 @@ class TimelineWidget(QWidget):
         tasks = self._load_tasks(filters)
         today, tomorrow, this_week, future = self._group_tasks(tasks)
 
-        self.timeline_layout.addWidget(TimelineSectionWidget("Today", "#FF6B6B", today, self))
-        self.timeline_layout.addWidget(TimelineSectionWidget("Tomorrow", "#FFA94D", tomorrow, self))
-        self.timeline_layout.addWidget(TimelineSectionWidget("This Week", "#4D96FF", this_week, self))
-        self.timeline_layout.addWidget(TimelineSectionWidget("Future", "#AAAAAA", future, self))
+        self.timeline_layout.addWidget(TimelineSectionWidget("今天", PKU_RED, today, self))
+        self.timeline_layout.addWidget(TimelineSectionWidget("明天", PKU_GOLD, tomorrow, self))
+        self.timeline_layout.addWidget(TimelineSectionWidget("本周", "#6B7D3A", this_week, self))
+        self.timeline_layout.addWidget(TimelineSectionWidget("更晚", "#9CA3AF", future, self))
         self.timeline_layout.addStretch()
 
     def _clear_sections(self):
@@ -180,24 +181,24 @@ class TimelineWidget(QWidget):
         return [
             {
                 "id": 1,
-                "title": "Math assignment",
-                "course_name": "Advanced Mathematics",
+                "title": "高数习题整理",
+                "course_name": "高等数学",
                 "due_time": datetime(2026, 6, 1, 12, 0),
                 "status": "todo",
                 "priority": 1,
             },
             {
                 "id": 2,
-                "title": "Programming project",
-                "course_name": "Programming Practice",
+                "title": "程序设计项目",
+                "course_name": "程序设计实践",
                 "due_time": datetime(2026, 6, 3, 23, 59),
                 "status": "todo",
                 "priority": 2,
             },
             {
                 "id": 3,
-                "title": "Physics lab report",
-                "course_name": "College Physics",
+                "title": "物理实验报告",
+                "course_name": "大学物理",
                 "due_time": datetime(2026, 6, 5, 18, 0),
                 "status": "done",
                 "priority": 3,

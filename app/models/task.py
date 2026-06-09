@@ -21,6 +21,7 @@ class Task:
     updated_at: datetime = field(default_factory=datetime.now) # 更新时间
     completed_at: datetime | None = None                       # 完成时间
     raw_payload: str = ""                                      # 调试用原始同步内容
+    is_hidden: bool = False                                    # 软删除标志：对同步任务不物理删除
 
     def mark_done(self, now: datetime) -> None:
         if not isinstance(now, datetime):

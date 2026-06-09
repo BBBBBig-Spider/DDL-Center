@@ -1,0 +1,117 @@
+var tutorQueryCtrl = angular.module('dc.controller.tutorQuery.tutorQueryCtrl', []);	
+tutorQueryCtrl.controller("tutorQueryController",['$scope','$http',function($scope,$http){
+	$scope.errorMsg = "";
+	$scope.deptList=null;
+	$scope.subjectList=null;
+	$scope.specialityList=null;
+	$scope.tutors=null;
+	$scope.tutorCount=0;
+	
+	$scope.retrSubjectList = function(){
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/common/util/retrSubject.do'
+	   	}).success(function(response){
+	        if(response.success==true){
+	        	$scope.subjectList = response.rows;
+	        }
+	    }).error(function(){
+	       	$scope.subjectList = null;
+			$scope.errorMsg="服务器没有响应";
+	    });
+	};
+	
+	$scope.getDeptList = function(){
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/common/util/retrJxDeptList.do'
+	    }).success(function(response){
+	        if(response.success==true){
+	        	$scope.deptList = response.rows;
+	        }
+	    }).error(function(){
+	        $scope.deptList = null;
+			$scope.errorMsg="服务器没有响应";
+	    });
+	};
+	
+	$scope.retrSpecialList = function(subject){
+		if(""!=subject){
+			$http({
+		    	method:'GET',
+		        dataType: "json",
+		        contentType:'application/json; charset=UTF-8',
+		        url:'/publicQuery/ctrl/common/util/retrSpecility.do',
+		        params:{
+		        	branchId:subject
+		        }
+		   	}).success(function(response){
+		        if(response.success==true){
+		        	$scope.specialityList = response.rows;
+		        }
+		    }).error(function(){
+		        $scope.specialityList = null;
+				$scope.errorMsg="服务器没有响应";
+		    });
+		}else{
+			$scope.specialityList = null;
+			$scope.errorMsg="请输入必要的查询条件";
+		}
+	};
+	
+	$scope.retrTutorList = function(){
+		var isTutorRecruit=$scope.isTutorRecruit;
+		var dept=$scope.dept;
+		var branch=$scope.branch;
+		var name=$scope.name;
+		var speciality=$scope.speciality;
+		
+		if(""!=branch&&null!=branch&&""!=speciality&&null!=speciality){
+			$http({
+		    	method:'POST',
+		        dataType: "json",
+		        url:'/publicQuery/ctrl/common/tutorQuery/retrTutorList.do',
+		        data:{
+		        	branch:branch,
+		        	dept:dept,
+		        	name:name,
+		        	speciality:speciality,
+		        	direction:'',
+		        	isTutorRecruit:isTutorRecruit
+		        },
+		        headers:{
+		        	'Content-Type':'application/json'
+		        }
+		  	}).success(function(response){
+		        if(response.success==true){
+		        	$scope.tutors = response.rows;
+		        	$scope.tutorCount = response.results;
+		        	$scope.errorMsg=response.msg;
+		        }else{
+		        	$scope.tutors = null;
+		        	$scope.tutorCount = 0;
+		        	$scope.errorMsg=response.msg;
+		        }
+		    }).error(function(){
+		        $scope.tutors = null;
+		        $scope.tutorCount = 0;
+				$scope.errorMsg="服务器没有响应";
+		    });
+		}else{
+			$scope.tutors = null;
+        	$scope.tutorCount = 0;
+			$scope.errorMsg="请输入必要的查询条件";
+		}
+	};
+		
+   	//初始化函数
+    var init = function() {
+        $scope.getDeptList();
+        $scope.retrSubjectList();
+    };
+    init();
+}]);

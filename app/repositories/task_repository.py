@@ -138,6 +138,7 @@ class TaskRepository:
                 else None
             ),
             raw_payload=row["raw_payload"],
+            is_hidden=bool(row["is_hidden"]),
         )
 
     # ─── 增 ────────────────────────────────────────────────────
@@ -167,9 +168,10 @@ class TaskRepository:
                     created_at,
                     updated_at,
                     completed_at,
-                    raw_payload
+                    raw_payload,
+                    is_hidden
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task.title,
@@ -187,6 +189,7 @@ class TaskRepository:
                     task.updated_at.isoformat(),
                     task.completed_at.isoformat() if task.completed_at else None,
                     task.raw_payload,
+                    int(task.is_hidden),
                 ),
             )
 
@@ -196,13 +199,14 @@ class TaskRepository:
     # ─── 查全部 ────────────────────────────────────────────────
 
     def list_all(self) -> List[Task]:
-        """返回所有任务，按截止时间升序排列。"""
+        """返回所有可见任务（is_hidden=0），按截止时间升序排列。"""
         conn = self.db_manager.get_connection()
 
         cursor = conn.execute(
             """
             SELECT *
             FROM tasks
+            WHERE is_hidden = 0
             ORDER BY due_time ASC
             """
         )
@@ -213,17 +217,17 @@ class TaskRepository:
     # ─── 查单个 ────────────────────────────────────────────────
 
     def get_by_id(self, task_id: int) -> Optional[Task]:
-        """根据 id 查询任务，找不到返回 None。"""
+        """根据 id 查询可见任务，找不到或已隐藏则返回 None。"""
         if not self._is_int(task_id):
             raise TypeError("task_id must be int")
-        
+
         conn = self.db_manager.get_connection()
 
         cursor = conn.execute(
             """
             SELECT *
             FROM tasks
-            WHERE id = ?
+            WHERE id = ? AND is_hidden = 0
             """,
             (task_id,),
         )
@@ -264,7 +268,8 @@ class TaskRepository:
                     external_id = ?,
                     updated_at = ?,
                     completed_at = ?,
-                    raw_payload = ?
+                    raw_payload = ?,
+                    is_hidden = ?
                 WHERE id = ?
                 """,
                 (
@@ -282,6 +287,7 @@ class TaskRepository:
                     task.updated_at.isoformat(),
                     task.completed_at.isoformat() if task.completed_at else None,
                     task.raw_payload,
+                    int(task.is_hidden),
                     task.id,
                 ),
             )
@@ -294,7 +300,7 @@ class TaskRepository:
         """根据 id 删除任务。返回 True 表示删除成功。"""
         if not self._is_int(task_id):
             raise TypeError("task_id must be int")
-        
+
         conn = self.db_manager.get_connection()
 
         with conn:
@@ -308,6 +314,28 @@ class TaskRepository:
 
         return cursor.rowcount > 0
 
+    def soft_delete(self, task_id: int) -> bool:
+        """将任务标记为隐藏（is_hidden=1），不物理删除。用于同步来源的任务。"""
+        if not self._is_int(task_id):
+            raise TypeError("task_id must be int")
+        conn = self.db_manager.get_connection()
+        with conn:
+            cursor = conn.execute(
+                "UPDATE tasks SET is_hidden = 1 WHERE id = ?",
+                (task_id,),
+            )
+        return cursor.rowcount > 0
+
+    def purge_hidden_overdue(self, now: datetime) -> int:
+        """物理删除已隐藏且已逾期的同步任务。在每次同步完成后调用。"""
+        conn = self.db_manager.get_connection()
+        with conn:
+            cursor = conn.execute(
+                "DELETE FROM tasks WHERE is_hidden = 1 AND source = 'sync' AND due_time < ?",
+                (now.isoformat(),),
+            )
+        return cursor.rowcount
+
     # ─── 扩展查询（可选，按需添加）─────────────────────────────
 
     def list_by_status(self, status: str) -> List[Task]:
@@ -319,7 +347,7 @@ class TaskRepository:
             """
             SELECT *
             FROM tasks
-            WHERE status = ?
+            WHERE status = ? AND is_hidden = 0
             ORDER BY due_time ASC
             """,
             (status,),
@@ -337,7 +365,7 @@ class TaskRepository:
             """
             SELECT *
             FROM tasks
-            WHERE course_id = ?
+            WHERE course_id = ? AND is_hidden = 0
             ORDER BY due_time ASC
             """,
             (course_id,),

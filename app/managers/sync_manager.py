@@ -3,11 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
-from app.config import MOCK_DDL_PATH, MOCK_EXAMS_PATH, MOCK_SCHEDULE_PATH
 from app.models.course import Course
 from app.models.exam import Exam
 from app.models.schedule_slot import ScheduleSlot
@@ -22,6 +21,7 @@ class SyncManager:
         self,
         *,
         auth_client,
+        portal_auth_client=None,
         teaching_site_client,
         ddl_parser,
         schedule_parser,
@@ -34,6 +34,7 @@ class SyncManager:
         ai_assistant_manager=None,
     ) -> None:
         self.auth_client = auth_client
+        self.portal_auth_client = portal_auth_client or auth_client
         self.teaching_site_client = teaching_site_client
         self.ddl_parser = ddl_parser
         self.schedule_parser = schedule_parser
@@ -51,95 +52,97 @@ class SyncManager:
         password: str = "",
         *,
         semester: str = "",
-        use_mock_on_failure: bool = True,
+        otp_code: str = "",
     ) -> SyncResult:
         result = SyncResult()
         try:
-            raw = self._fetch_network_payloads(username, password, semester)
+            session = self._login(username, password)
             result.source = "network"
         except Exception as exc:
-            if not use_mock_on_failure:
-                raise SyncError(str(exc)) from exc
-            raw = self._fetch_mock_payloads()
-            result.used_mock = True
-            result.source = "mock"
-            result.errors.append(f"network fallback: {exc}")
+            raise SyncError(str(exc)) from exc
 
-        self._sync_tasks(self.ddl_parser.parse(raw["ddl"]), result)
-        self._sync_schedule(self.schedule_parser.parse(raw["schedule"]), result)
-        self._sync_exams(self.exam_parser.parse(raw["exams"]), result)
+        self._sync_section(
+            result,
+            label="DDL",
+            fetch=lambda: self.teaching_site_client.fetch_ddl(session, semester),
+            parse=self.ddl_parser.parse,
+            apply=self._sync_tasks,
+        )
+        self._sync_section(
+            result,
+            label="课表",
+            fetch=lambda: self.teaching_site_client.fetch_schedule(self._login_portal(username, password, otp_code), semester),
+            parse=self.schedule_parser.parse,
+            apply=self._sync_schedule,
+        )
+        self._sync_section(
+            result,
+            label="考试",
+            fetch=lambda: self.teaching_site_client.fetch_exams(session, semester),
+            parse=self.exam_parser.parse,
+            apply=self._sync_exams,
+        )
         return result
 
-    def sync_mock_data(self) -> SyncResult:
-        raw = self._fetch_mock_payloads()
-        result = SyncResult(used_mock=True, source="mock")
-        self._sync_tasks(self.ddl_parser.parse(raw["ddl"]), result)
-        self._sync_schedule(self.schedule_parser.parse(raw["schedule"]), result)
-        self._sync_exams(self.exam_parser.parse(raw["exams"]), result)
-        return result
-
-    def _fetch_network_payloads(
+    def _login(
         self,
         username: str,
         password: str,
-        semester: str,
-    ) -> dict[str, str]:
+    ):
+        username = username or os.getenv("PKU_USERNAME", "")
+        password = password or os.getenv("PKU_PASSWORD", "")
         if not username or not password:
             raise SyncError("username and password are required for network sync")
-        session = self.auth_client.login(username, password)
-        try:
-            return {
-                "ddl": self.teaching_site_client.fetch_ddl(session, semester),
-                "schedule": self.teaching_site_client.fetch_schedule(session, semester),
-                "exams": self.teaching_site_client.fetch_exams(session, semester),
-            }
-        except NetworkError:
-            raise
+        return self.auth_client.login(username, password)
+
+    def _login_portal(
+        self,
+        username: str,
+        password: str,
+        otp_code: str = "",
+    ):
+        username = username or os.getenv("PKU_USERNAME", "")
+        password = password or os.getenv("PKU_PASSWORD", "")
+        otp_code = otp_code or os.getenv("PKU_OTP_CODE", "")
+        if not username or not password:
+            raise SyncError("username and password are required for portal sync")
+        return self.portal_auth_client.login(username, password, otp_code=otp_code)
 
     @staticmethod
-    def _fetch_mock_payloads() -> dict[str, str]:
-        return {
-            "ddl": Path(MOCK_DDL_PATH).read_text(encoding="utf-8"),
-            "schedule": Path(MOCK_SCHEDULE_PATH).read_text(encoding="utf-8"),
-            "exams": Path(MOCK_EXAMS_PATH).read_text(encoding="utf-8"),
-        }
+    def _sync_section(result: SyncResult, *, label: str, fetch, parse, apply) -> None:
+        try:
+            raw = fetch()
+            items = parse(raw)
+            apply(items, result)
+        except Exception as exc:
+            result.errors.append(f"{label}同步失败：{exc}")
 
     def _sync_tasks(self, tasks: list[Task], result: SyncResult) -> None:
+        now = datetime.now()
         for task in tasks:
             if not task.external_id:
                 continue
+            # Skip tasks that are already overdue at sync time
+            if task.due_time is not None and task.due_time < now:
+                continue
             payload = self._payload(task.raw_payload)
             task.course_id = self._ensure_course(payload, result)
-            old_record = self.sync_repository.get_record("ddl", task.external_id)
             raw_hash = self._hash_object(task)
             existing = self.task_repository.find_by_external_id(task.external_id)
 
-            if existing is None:
-                task.created_at = datetime.now()
-                task.updated_at = task.created_at
-                self.task_repository.add(task)
-                status = "new"
-                result.tasks_new += 1
-            elif old_record is not None and old_record.raw_hash == raw_hash:
-                status = "unchanged"
+            # Skip tasks that were previously synced from the teaching site
+            if existing is not None:
                 result.tasks_unchanged += 1
-                task.id = existing.id
-            elif existing.user_modified:
-                status = "unchanged"
-                result.tasks_unchanged += 1
-                task.id = existing.id
-            else:
-                task.id = existing.id
-                task.created_at = existing.created_at
-                task.updated_at = datetime.now()
-                task.status = existing.status
-                task.completed_at = existing.completed_at
-                task.user_modified = existing.user_modified
-                self.task_repository.update(task)
-                status = "updated"
-                result.tasks_updated += 1
+                continue
 
-            self._record("ddl", task.external_id, "task", task.id, raw_hash, status)
+            task.created_at = now
+            task.updated_at = now
+            self.task_repository.add(task)
+            result.tasks_new += 1
+            self._record("ddl", task.external_id, "task", task.id, raw_hash, "new")
+
+        # Physically remove hidden synced tasks whose due date is past (won't re-appear in future syncs)
+        self.task_repository.purge_hidden_overdue(now)
 
     def _sync_schedule(self, slots: list[ScheduleSlot], result: SyncResult) -> None:
         for slot in slots:

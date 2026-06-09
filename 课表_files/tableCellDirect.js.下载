@@ -1,0 +1,19 @@
+var tableCellDirect = angular.module('dc.direct.tableCellDirect', []);
+tableCellDirect.directive("tableCell",function(){
+	return {
+		restrict : 'A',//匹配模式，A：属性，E：elment 元素,M：注释方式，C：样式
+        scope:{
+        	colId:"@",
+        	rowItem:"="
+        },
+        link: function (scope, element, attrs) { 
+        	var colId = scope.colId;
+        	if(scope.rowItem!=null){
+	        	var colValue = scope.rowItem[colId];
+	        	element.text(colValue);
+        	}
+        },
+        template: '',
+        replace :true
+    };
+});

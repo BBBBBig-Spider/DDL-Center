@@ -1,0 +1,112 @@
+var myCourseTableCtrl = angular.module('dc.controller.courseTable.myCourseTableCtrl', []);	
+myCourseTableCtrl.controller("myCourseTableController",['$scope','$http',function($scope,$http){
+	$scope.errorMsg = "";
+	$scope.xndXqList=[];
+	$scope.xndXq="";
+	$scope.getXndXqList = function(){
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/topic/myCourseTable/getXndXqList.do'
+	    }).success(function(response){
+	        if(true==response.success){
+	        	$scope.errorMsg ="";
+	        	$scope.xndXq=response.nowXnxq.xndxq;
+	        	$scope.xndXqList=response.xndxq;
+	        	$scope.getCourseInfo();
+	        }else{
+	        	$scope.errorMsg ="获取学年度学期信息失败";
+	        	$scope.xndXqList=[];
+	        	$scope.xndXq="";
+	       	}
+	    }).error(function(e, code){
+	        $scope.errorMsg ="获取学年度学期信息失败";
+	        $scope.xndXqList=[];
+	        throw(code);
+	    });
+	};
+		
+	$scope.getCourseInfo = function(){
+		$http({
+	    	method:'GET',
+	        dataType: "json",
+	        contentType:'application/json; charset=UTF-8',
+	        url:'/publicQuery/ctrl/topic/myCourseTable/getCourseInfo.do?xndxq='+$scope.xndXq
+	    }).success(function(response){
+	        if(true==response.success){
+	        	$scope.errorMsg ="";
+	        	var courses = response.course;
+	        	for(var i=0;i<courses.length;i++){
+	        		var course = courses[i];
+	        		var mon = course.mon;
+	        		var tue = course.tue;
+	        		var wed = course.wed;
+	        		var thu = course.thu;
+	        		var fri = course.fri;
+	        		var sat = course.sat;
+	        		var sun = course.sun;
+	        		document.getElementById('mon'+(i+1)).style=mon.sty;
+	        		$('#mon'+(i+1)).html('<div style="line-height:16px;"><span style="font-size:12px;">'+mon.courseName+'</span></div>');
+	        		document.getElementById('tue'+(i+1)).style=tue.sty;
+	        		$('#tue'+(i+1)).html('<div style="line-height:16px;"><span style="font-size:12px;">'+tue.courseName+'</span></div>');
+	        		document.getElementById('wed'+(i+1)).style=wed.sty;
+	        		$('#wed'+(i+1)).html('<div style="line-height:16px;"><span style="font-size:12px;">'+wed.courseName+'</span></div>');
+	        		document.getElementById('thu'+(i+1)).style=thu.sty;
+	        		$('#thu'+(i+1)).html('<div style="line-height:16px;"><span style="font-size:12px;">'+thu.courseName+'</span></div>');
+	        		document.getElementById('fri'+(i+1)).style=fri.sty;
+	        		$('#fri'+(i+1)).html('<div style="line-height:16px;"><span style="font-size:12px;">'+fri.courseName+'</span></div>');
+	        		document.getElementById('sat'+(i+1)).style=sat.sty;
+	        		$('#sat'+(i+1)).html('<div style="line-height:16px;"><span style="font-size:12px;">'+sat.courseName+'</span></div>');
+	        		document.getElementById('sun'+(i+1)).style=sun.sty;
+	        		$('#sun'+(i+1)).html('<div style="line-height:16px;"><span style="font-size:12px;">'+sun.courseName+'</span></div>');
+	        	}
+	        	var remarks = response.remark;
+	        	$('#remarks').html(remarks);
+	        }else{
+	        	for(var i=0;i<11;i++){
+		        	$('#mon'+(i+1)).html('');
+		        	document.getElementById('mon'+(i+1)).style="background-color:white;";
+	        		$('#tue'+(i+1)).html('');
+	        		document.getElementById('tue'+(i+1)).style="background-color:white;";
+	        		$('#wed'+(i+1)).html('');
+	        		document.getElementById('wed'+(i+1)).style="background-color:white;";
+	        		$('#thu'+(i+1)).html('');
+	        		document.getElementById('thu'+(i+1)).style="background-color:white;";
+	        		$('#fri'+(i+1)).html('');
+	        		document.getElementById('fri'+(i+1)).style="background-color:white;";
+	        		$('#sat'+(i+1)).html('');
+	        		document.getElementById('sat'+(i+1)).style="background-color:white;";
+	        		$('#sun'+(i+1)).html('');
+	        		document.getElementById('sun'+(i+1)).style="background-color:white;";
+	        	}
+	        	$('#remark').html('');
+        		$scope.errorMsg = response.message||response.errorMsg||response.msg;
+	        }
+	   	}).error(function(){
+	        for(var i=0;i<11;i++){
+	        	$('#mon'+(i+1)).html('');
+	        	document.getElementById('mon'+(i+1)).style="background-color:white;";
+        		$('#tue'+(i+1)).html('');
+        		document.getElementById('tue'+(i+1)).style="background-color:white;";
+        		$('#wed'+(i+1)).html('');
+        		document.getElementById('wed'+(i+1)).style="background-color:white;";
+        		$('#thu'+(i+1)).html('');
+        		document.getElementById('thu'+(i+1)).style="background-color:white;";
+        		$('#fri'+(i+1)).html('');
+        		document.getElementById('fri'+(i+1)).style="background-color:white;";
+        		$('#sat'+(i+1)).html('');
+        		document.getElementById('sat'+(i+1)).style="background-color:white;";
+        		$('#sun'+(i+1)).html('');
+        		document.getElementById('sun'+(i+1)).style="background-color:white;";
+        	}
+        	$('#remark').html('');
+	    });
+	};
+		
+    //初始化函数
+    var init = function() {
+        $scope.getXndXqList();
+    };
+    init();
+}]);
