@@ -20,6 +20,7 @@ Two entry points are exposed:
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -53,6 +54,22 @@ _SINGLE_WEEK_RE = re.compile(r"第?\s*(\d{1,2})\s*周")
 _EXAM_LINE_RE = re.compile(
     r"(\d{4}-\d{1,2}-\d{1,2})\s+(\d{1,2}:\d{2})\s*[-~－—]\s*(\d{1,2}:\d{2})\s*([^\s].*)?"
 )
+# Compact PKU portal layout: "20260618 星期四 下午 二教105" — date is 8
+# digits, the clock is replaced by a 时段 keyword (上午/下午/晚上/中午).
+_EXAM_LINE_COMPACT_RE = re.compile(
+    r"(?P<date>\d{8})"
+    r"(?:\s*星期[一二三四五六七日天])?"
+    r"\s*(?P<period>上午|下午|晚上|中午|早上|凌晨)"
+    r"\s*(?P<location>[^<\n\r]+)?"
+)
+_PERIOD_TIME_WINDOWS = {
+    "早上": ("08:00", "12:00"),
+    "上午": ("08:00", "12:00"),
+    "中午": ("12:00", "13:00"),
+    "下午": ("13:00", "17:00"),
+    "晚上": ("18:00", "22:00"),
+    "凌晨": ("00:00", "06:00"),
+}
 _EXAM_WEEK_RE = re.compile(
     r"考试周[:：]?\s*(\d{4}-\d{1,2}-\d{1,2})\s*(?:至|到|-|~|—)\s*(\d{4}-\d{1,2}-\d{1,2})"
 )
@@ -72,6 +89,7 @@ def parse_portal_import(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     slots: list[dict] = []
     exams: list[dict] = []
+    seen_exam_keys: set[tuple] = set()
 
     for cell in soup.find_all(attrs={"id": _CELL_ID_RE}):
         match = _CELL_ID_RE.match(cell.get("id", ""))
@@ -99,7 +117,12 @@ def parse_portal_import(html: str) -> dict:
 
         exam = _build_exam(title, exam_line)
         if exam is not None:
-            exams.append(exam)
+            # The same course shows up in many cells (one per period it
+            # meets each week), so guard against duplicates by (course, time).
+            key = (exam["course_name"], exam["start_time"])
+            if key not in seen_exam_keys:
+                seen_exam_keys.add(key)
+                exams.append(exam)
 
     exam_week_start, exam_week_end = _extract_exam_week(soup)
     return {
@@ -135,22 +158,46 @@ def _build_exam(title: str, exam_line: str) -> Optional[dict]:
         return None
     body = exam_line.split("：", 1)[-1] if "：" in exam_line else exam_line
     body = body.split(":", 1)[-1] if body == exam_line and ":" in exam_line else body
+    body = body.strip()
+
+    # Format A (legacy): "2026-06-20 09:00-11:00 理教303"
     match = _EXAM_LINE_RE.search(body)
-    if not match:
-        return None
-    date_str, start_clock, end_clock, location = match.groups()
-    date_norm = _normalize_date(date_str)
-    if date_norm is None:
-        return None
-    location = (location or "").strip()
-    return {
-        "name": f"{title}考试",
-        "start_time": f"{date_norm}T{_pad_clock(start_clock)}",
-        "end_time": f"{date_norm}T{_pad_clock(end_clock)}",
-        "location": location,
-        "exam_type": "final",
-        "course_name": title,
-    }
+    if match:
+        date_str, start_clock, end_clock, location = match.groups()
+        date_norm = _normalize_date(date_str)
+        if date_norm is None:
+            return None
+        location = (location or "").strip()
+        return {
+            "name": f"{title}考试",
+            "start_time": f"{date_norm}T{_pad_clock(start_clock)}",
+            "end_time": f"{date_norm}T{_pad_clock(end_clock)}",
+            "location": location,
+            "exam_type": "final",
+            "course_name": title,
+        }
+
+    # Format B (PKU portal compact): "20260618 星期四 下午 二教105"
+    match = _EXAM_LINE_COMPACT_RE.search(body)
+    if match:
+        raw_date = match.group("date")
+        period = match.group("period")
+        location = (match.group("location") or "").strip()
+        try:
+            date_norm = f"{raw_date[0:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+            datetime.strptime(date_norm, "%Y-%m-%d")
+        except ValueError:
+            return None
+        start_clock, end_clock = _PERIOD_TIME_WINDOWS.get(period, ("09:00", "11:00"))
+        return {
+            "name": f"{title}考试",
+            "start_time": f"{date_norm}T{_pad_clock(start_clock)}",
+            "end_time": f"{date_norm}T{_pad_clock(end_clock)}",
+            "location": location,
+            "exam_type": "final",
+            "course_name": title,
+        }
+    return None
 
 
 def _parse_week_range(text: str) -> tuple[int, int]:

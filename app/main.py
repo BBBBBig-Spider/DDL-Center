@@ -7,6 +7,7 @@ from app.gui.theme import application_style
 
 
 def build_facade():
+    from app.config import PKU_SYNC_AI_FALLBACK
     from app.database.database_manager import DatabaseManager
     from app.managers.ai_assistant_manager import AIAssistantManager
     from app.managers.alert_manager import AlertManager
@@ -20,7 +21,6 @@ def build_facade():
     from app.managers.task_manager import TaskManager
     from app.network.auth_client import AuthClient
     from app.network.teaching_site_client import TeachingSiteClient
-    from app.config import PORTAL_APPID, PORTAL_REDIR_URL
     from app.parsers.ddl_parser import DDLParser
     from app.parsers.exam_parser import ExamParser
     from app.parsers.schedule_parser import ScheduleParser
@@ -60,7 +60,6 @@ def build_facade():
     )
     sync_manager = SyncManager(
         auth_client=AuthClient(),
-        portal_auth_client=AuthClient(appid=PORTAL_APPID, redir_url=PORTAL_REDIR_URL),
         teaching_site_client=TeachingSiteClient(),
         ddl_parser=DDLParser(),
         schedule_parser=ScheduleParser(),
@@ -71,6 +70,7 @@ def build_facade():
         exam_repository=exam_repository,
         sync_repository=sync_repository,
         ai_assistant_manager=ai_assistant_manager,
+        ai_fallback_enabled=PKU_SYNC_AI_FALLBACK,
     )
 
     facade = AppFacade(

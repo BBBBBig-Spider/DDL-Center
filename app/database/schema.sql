@@ -92,6 +92,13 @@ CREATE TABLE IF NOT EXISTS user_settings (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ai_announcement_reviews (
+    external_id TEXT PRIMARY KEY,
+    decision_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '',
+    reviewed_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_due_time ON tasks(due_time);
 CREATE INDEX IF NOT EXISTS idx_tasks_course_id ON tasks(course_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);

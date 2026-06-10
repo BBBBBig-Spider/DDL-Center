@@ -314,6 +314,13 @@ class TaskRepository:
 
         return cursor.rowcount > 0
 
+    def delete_all_synced(self) -> int:
+        """Delete every task whose source='sync'. Returns number of rows removed."""
+        conn = self.db_manager.get_connection()
+        with conn:
+            cursor = conn.execute("DELETE FROM tasks WHERE source = 'sync'")
+        return cursor.rowcount
+
     def soft_delete(self, task_id: int) -> bool:
         """将任务标记为隐藏（is_hidden=1），不物理删除。用于同步来源的任务。"""
         if not self._is_int(task_id):

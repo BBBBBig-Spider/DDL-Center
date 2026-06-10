@@ -1,7 +1,7 @@
 ﻿import sys
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -351,6 +351,18 @@ class TaskListWidget(QWidget):
         self.btn_add_task.clicked.connect(self.show_add_task_dialog)
         self.top_layout.addWidget(self.btn_add_task)
 
+        self.btn_sync = QPushButton("🔄 同步教学网")
+        self.btn_sync.setStyleSheet(
+            f"QPushButton {{ background-color: #FFFFFF; color: {PKU_RED}; border: 1px solid {PKU_RED}; "
+            f"border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: {PKU_RED_LIGHT}; }}"
+            f"QPushButton:disabled {{ color: #999999; border-color: #CCCCCC; }}"
+        )
+        self.btn_sync.clicked.connect(self._trigger_sync)
+        self.top_layout.addWidget(self.btn_sync)
+        self._sync_thread: QThread | None = None
+        self._sync_worker = None
+
         self.filter_label = QLabel("状态：")
         self.filter_label.setStyleSheet(f"margin-left: 15px; font-size: 13px; color: {TEXT}; background-color: transparent;")
         self.top_layout.addWidget(self.filter_label)
@@ -549,6 +561,98 @@ class TaskListWidget(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "清理失败", str(exc))
         self.refresh_current_view()
+
+    def _trigger_sync(self) -> None:
+        if self._sync_thread is not None and self._sync_thread.isRunning():
+            return
+        if not self.facade or not hasattr(self.facade, "sync_from_teaching_site"):
+            QMessageBox.warning(self, "无法同步", "当前 Facade 不支持教学网同步。")
+            return
+
+        from app.services import credentials_store
+        if not credentials_store.is_logged_in():
+            from app.gui.login_dialog import LoginDialog
+            auth_client = None
+            if hasattr(self.facade, "get_auth_client"):
+                try:
+                    auth_client = self.facade.get_auth_client()
+                except Exception:
+                    auth_client = None
+            if auth_client is None:
+                QMessageBox.warning(self, "无法登录", "登录服务不可用。")
+                return
+            if not LoginDialog.run(self, auth_client):
+                return
+
+        username, password = credentials_store.load()
+        from app.gui.sync_worker import SyncWorker
+
+        self.btn_sync.setEnabled(False)
+        self.btn_sync.setText("同步中…")
+
+        thread = QThread(self)
+        worker = SyncWorker(self.facade, username, password)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_sync_finished)
+        worker.failed.connect(self._on_sync_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._clear_sync_thread)
+        self._sync_thread = thread
+        self._sync_worker = worker
+        thread.start()
+
+    def _on_sync_finished(self, result) -> None:
+        self._restore_sync_button()
+        QMessageBox.information(self, "同步完成", self._format_sync_result(result))
+        self.refresh_current_view()
+
+    def _on_sync_failed(self, message: str) -> None:
+        self._restore_sync_button()
+        QMessageBox.warning(self, "同步失败", message)
+
+    def _restore_sync_button(self) -> None:
+        self.btn_sync.setEnabled(True)
+        self.btn_sync.setText("🔄 同步教学网")
+
+    def _clear_sync_thread(self) -> None:
+        if self._sync_thread is not None:
+            self._sync_thread.deleteLater()
+        self._sync_thread = None
+        self._sync_worker = None
+
+    @staticmethod
+    def _format_sync_result(result) -> str:
+        source = get_field(result, "source", "network")
+        errors = get_field(result, "errors", []) or []
+        tasks_new = get_field(result, "tasks_new", 0)
+        tasks_unchanged = get_field(result, "tasks_unchanged", 0)
+        tasks_dropped_overdue = get_field(result, "tasks_dropped_overdue", 0)
+        ai_recovered = get_field(result, "ai_recovered", 0)
+        ai_drop_overdue = get_field(result, "ai_drop_overdue", 0)
+        ai_drop_non_task = get_field(result, "ai_drop_non_task", 0)
+        ai_drop_no_ai = get_field(result, "ai_drop_no_ai", 0)
+
+        lines = [f"同步完成（来源：{source}）"]
+        lines.append(f"任务：新增 {tasks_new}，未变 {tasks_unchanged}")
+        if tasks_dropped_overdue:
+            lines.append(f"丢弃逾期：{tasks_dropped_overdue} 条")
+        if ai_recovered:
+            lines.append(f"AI 兜底成功：{ai_recovered} 条（无结束时间）")
+        ai_drop_total = ai_drop_overdue + ai_drop_non_task + ai_drop_no_ai
+        if ai_drop_total:
+            lines.append(
+                f"AI 兜底丢弃：逾期 {ai_drop_overdue}，非任务 {ai_drop_non_task}，"
+                f"无 AI {ai_drop_no_ai}"
+            )
+        if errors:
+            lines.append("")
+            lines.append("部分模块失败：")
+            for err in errors:
+                lines.append(f"  - {err}")
+        return "\n".join(lines)
 
     def toggle_batch_mode(self) -> None:
         self.batch_mode = not self.batch_mode

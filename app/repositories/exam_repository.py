@@ -249,6 +249,13 @@ class ExamRepository:
 
         return cursor.rowcount > 0
 
+    def delete_all_synced(self) -> int:
+        """Delete every exam whose source='sync'. Returns number of rows removed."""
+        conn = self.db_manager.get_connection()
+        with conn:
+            cursor = conn.execute("DELETE FROM exams WHERE source = 'sync'")
+        return cursor.rowcount
+
     # ─── 按 external_id 查 ────────────────────────────────────
 
     def find_by_external_id(self, external_id: str) -> Optional[Exam]:

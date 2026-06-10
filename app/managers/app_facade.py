@@ -153,10 +153,34 @@ class AppFacade:
 
     # ─── 同步 / 统计 ──────────────────────────────────────────
 
-    def sync_from_teaching_site(self, username: str, password: str, otp_code: str = ""):
-        return self._require("sync_manager").sync_from_teaching_site(
-            username, password, otp_code=otp_code
-        )
+    def sync_from_teaching_site(self, username: str, password: str):
+        return self._require("sync_manager").sync_from_teaching_site(username, password)
+
+    def get_auth_client(self):
+        return self._require("sync_manager").auth_client
+
+    def logout_and_clear_sync_data(self) -> dict:
+        from app.services import credentials_store
+
+        sync_manager = self._require("sync_manager")
+        tasks_deleted = 0
+        exams_deleted = 0
+        reviews_deleted = 0
+        task_repo = getattr(sync_manager, "task_repository", None)
+        exam_repo = getattr(sync_manager, "exam_repository", None)
+        sync_repo = getattr(sync_manager, "sync_repository", None)
+        if task_repo is not None and hasattr(task_repo, "delete_all_synced"):
+            tasks_deleted = task_repo.delete_all_synced()
+        if exam_repo is not None and hasattr(exam_repo, "delete_all_synced"):
+            exams_deleted = exam_repo.delete_all_synced()
+        if sync_repo is not None and hasattr(sync_repo, "clear_ai_reviews"):
+            reviews_deleted = sync_repo.clear_ai_reviews()
+        credentials_store.clear()
+        return {
+            "tasks_deleted": tasks_deleted,
+            "exams_deleted": exams_deleted,
+            "reviews_deleted": reviews_deleted,
+        }
 
     def get_statistics(self):
         return self._require("statistics_manager").get_statistics()

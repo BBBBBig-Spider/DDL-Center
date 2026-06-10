@@ -22,7 +22,6 @@ class SyncManager:
         self,
         *,
         auth_client,
-        portal_auth_client=None,
         teaching_site_client,
         ddl_parser,
         schedule_parser,
@@ -33,9 +32,9 @@ class SyncManager:
         exam_repository,
         sync_repository,
         ai_assistant_manager=None,
+        ai_fallback_enabled: bool = True,
     ) -> None:
         self.auth_client = auth_client
-        self.portal_auth_client = portal_auth_client or auth_client
         self.teaching_site_client = teaching_site_client
         self.ddl_parser = ddl_parser
         self.schedule_parser = schedule_parser
@@ -46,6 +45,7 @@ class SyncManager:
         self.exam_repository = exam_repository
         self.sync_repository = sync_repository
         self.ai_assistant_manager = ai_assistant_manager
+        self.ai_fallback_enabled = ai_fallback_enabled
 
     def sync_from_teaching_site(
         self,
@@ -53,7 +53,6 @@ class SyncManager:
         password: str = "",
         *,
         semester: str = "",
-        otp_code: str = "",
     ) -> SyncResult:
         result = SyncResult()
         try:
@@ -62,27 +61,21 @@ class SyncManager:
         except Exception as exc:
             raise SyncError(str(exc)) from exc
 
-        self._sync_section(
-            result,
-            label="DDL",
-            fetch=lambda: self.teaching_site_client.fetch_ddl(session, semester),
-            parse=self.ddl_parser.parse,
-            apply=self._sync_tasks,
-        )
-        self._sync_section(
-            result,
-            label="课表",
-            fetch=lambda: self.teaching_site_client.fetch_schedule(self._login_portal(username, password, otp_code), semester),
-            parse=self.schedule_parser.parse,
-            apply=self._sync_schedule,
-        )
-        self._sync_section(
-            result,
-            label="考试",
-            fetch=lambda: self.teaching_site_client.fetch_exams(session, semester),
-            parse=self.exam_parser.parse,
-            apply=self._sync_exams,
-        )
+        try:
+            raw = self.teaching_site_client.fetch_current_semester_ddl(session)
+            warnings = getattr(self.teaching_site_client, "_last_warnings", None) or []
+            for w in warnings:
+                if w:
+                    result.errors.append(w)
+            try:
+                # 让 client 自行清空（如有）
+                self.teaching_site_client._last_warnings = []
+            except Exception:
+                pass
+            items = self.ddl_parser.parse_assignment_items(raw)
+            self._process_assignment_items(items, result)
+        except Exception as exc:
+            result.errors.append(f"DDL同步失败：{exc}")
         return result
 
     def _login(
@@ -96,117 +89,231 @@ class SyncManager:
             raise SyncError("username and password are required for network sync")
         return self.auth_client.login(username, password)
 
-    def _login_portal(
+    # ─── 新流程：基于 li 的处理 ────────────────────────────────
+
+    def _process_assignment_items(self, items: list[dict], result: SyncResult) -> None:
+        now = datetime.now()
+        for item in items:
+            due = item.get("due_time")
+            if due is not None and due < now:
+                result.tasks_dropped_overdue += 1
+                continue
+            if due is None:
+                self._ai_resolve_missing_due(item, result, now)
+                continue
+            self._upsert_sync_task(item, due, result, now)
+
+        try:
+            self.task_repository.purge_hidden_overdue(now)
+        except Exception:
+            pass
+
+    def _upsert_sync_task(
         self,
-        username: str,
-        password: str,
-        otp_code: str = "",
-    ):
-        username = username or os.getenv("PKU_USERNAME", "")
-        password = password or os.getenv("PKU_PASSWORD", "")
-        otp_code = otp_code or os.getenv("PKU_OTP_CODE", "")
-        if not username or not password:
-            raise SyncError("username and password are required for portal sync")
-        return self.portal_auth_client.login(username, password, otp_code=otp_code)
+        item: dict,
+        due_time: datetime,
+        result: SyncResult,
+        now: datetime,
+    ) -> None:
+        course_external_id = item.get("course_external_id") or ""
+        li_id = item.get("external_id") or ""
+        if course_external_id:
+            external_id = f"{course_external_id}:{li_id}"
+        else:
+            external_id = li_id
+        if not external_id:
+            return
+
+        existing = self.task_repository.find_by_external_id(external_id)
+        if existing is not None:
+            result.tasks_unchanged += 1
+            return
+
+        desc = (item.get("description") or "")
+        if len(desc) > 120:
+            if (
+                self.ai_assistant_manager is not None
+                and self.ai_fallback_enabled
+                and self.ai_assistant_manager.is_available()
+            ):
+                try:
+                    desc = self.ai_assistant_manager.compress_description(desc, 120)
+                except Exception:
+                    desc = self._truncate(desc, 120)
+            else:
+                desc = self._truncate(desc, 120)
+
+        course_payload = {
+            "course_external_id": course_external_id,
+            "course_name": item.get("course_name") or "",
+        }
+        course_id = self._ensure_course(course_payload, result)
+
+        task = Task(
+            title=str(item.get("title") or "未命名作业")[:200],
+            due_time=due_time,
+            description=desc,
+            source="sync",
+            external_id=external_id,
+            course_id=course_id,
+            created_at=now,
+            updated_at=now,
+            raw_payload=json.dumps(
+                {
+                    "raw": "sync-v2",
+                    "course_external_id": course_external_id,
+                    "course_name": item.get("course_name") or "",
+                },
+                ensure_ascii=False,
+            ),
+        )
+        self.task_repository.add(task)
+        result.tasks_new += 1
+
+    def _ai_resolve_missing_due(
+        self,
+        item: dict,
+        result: SyncResult,
+        now: datetime,
+    ) -> None:
+        if (
+            not self.ai_fallback_enabled
+            or self.ai_assistant_manager is None
+            or not self.ai_assistant_manager.is_available()
+        ):
+            result.ai_drop_no_ai += 1
+            return
+
+        text = item.get("text") or item.get("description") or ""
+        if not text.strip():
+            result.ai_drop_non_task += 1
+            return
+
+        try:
+            parsed = self.ai_assistant_manager.parse_item_from_text(text[:1500])
+        except Exception as exc:
+            result.errors.append(
+                f"AI 兜底失败：{item.get('title') or item.get('external_id') or ''} → {exc}"
+            )
+            return
+
+        if parsed.get("type") != "task":
+            result.ai_drop_non_task += 1
+            return
+
+        payload = parsed.get("payload") or {}
+        due_time = self._coerce_datetime(payload.get("due_time"))
+        if due_time is None or due_time < now:
+            result.ai_drop_overdue += 1
+            return
+
+        course_external_id = item.get("course_external_id") or ""
+        li_id = item.get("external_id") or ""
+        if course_external_id:
+            external_id = f"ai-rec-{course_external_id}:{li_id}"
+        else:
+            external_id = f"ai-rec-{li_id}"
+        if not li_id and not course_external_id:
+            return
+
+        if self.task_repository.find_by_external_id(external_id) is not None:
+            result.tasks_unchanged += 1
+            return
+
+        desc = str(payload.get("description") or item.get("description") or "")
+        if len(desc) > 120:
+            try:
+                desc = self.ai_assistant_manager.compress_description(desc, 120)
+            except Exception:
+                desc = self._truncate(desc, 120)
+
+        course_payload = {
+            "course_external_id": course_external_id,
+            "course_name": item.get("course_name") or "",
+        }
+        course_id = self._ensure_course(course_payload, result)
+
+        try:
+            estimated = float(payload.get("estimated_hours", 2) or 2)
+        except (TypeError, ValueError):
+            estimated = 2.0
+        if estimated <= 0:
+            estimated = 2.0
+
+        task = Task(
+            title=str(payload.get("title") or item.get("title") or "AI 兜底任务")[:200],
+            due_time=due_time,
+            description=desc,
+            estimated_hours=estimated,
+            status="todo",
+            priority=int(payload.get("priority", 2) or 2),
+            source="sync",
+            external_id=external_id,
+            course_id=course_id,
+            created_at=now,
+            updated_at=now,
+            raw_payload=json.dumps(
+                {
+                    "raw": "ai-recovered",
+                    "source_item": item.get("title") or "",
+                    "course_external_id": course_external_id,
+                    "course_name": item.get("course_name") or "",
+                },
+                ensure_ascii=False,
+            ),
+        )
+        self.task_repository.add(task)
+        result.ai_recovered += 1
 
     @staticmethod
-    def _sync_section(result: SyncResult, *, label: str, fetch, parse, apply) -> None:
-        try:
-            raw = fetch()
-            items = parse(raw)
-            apply(items, result)
-        except Exception as exc:
-            result.errors.append(f"{label}同步失败：{exc}")
+    def _truncate(text: str, max_chars: int) -> str:
+        if len(text) <= max_chars:
+            return text
+        head = text[: max_chars - 1]
+        for sep in ("。", "；", "\n", "！", "？"):
+            idx = head.rfind(sep)
+            if idx >= max_chars // 2:
+                return head[: idx + 1] + "…"
+        return head + "…"
+
+    @staticmethod
+    def _coerce_datetime(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None) if value.tzinfo is not None else value
+        if isinstance(value, str) and value.strip():
+            try:
+                dt = datetime.fromisoformat(value.strip().replace("Z", ""))
+            except ValueError:
+                return None
+            return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+        return None
+
+    # ─── 工具 / 公共：course upsert + sync record ──────────────
 
     def _sync_tasks(self, tasks: list[Task], result: SyncResult) -> None:
+        """Backward-compat shim used by tests that bypass the new pipeline.
+
+        Mirrors the legacy "skip when external_id already known, otherwise
+        add" semantics on a list of pre-built ``Task`` objects.
+        """
         now = datetime.now()
         for task in tasks:
             if not task.external_id:
                 continue
-            # Skip tasks that are already overdue at sync time
             if task.due_time is not None and task.due_time < now:
                 continue
-            payload = self._payload(task.raw_payload)
-            task.course_id = self._ensure_course(payload, result)
-            raw_hash = self._hash_object(task)
             existing = self.task_repository.find_by_external_id(task.external_id)
-
-            # Skip tasks that were previously synced from the teaching site
             if existing is not None:
                 result.tasks_unchanged += 1
                 continue
-
             task.created_at = now
             task.updated_at = now
             self.task_repository.add(task)
             result.tasks_new += 1
-            self._record("ddl", task.external_id, "task", task.id, raw_hash, "new")
-
-        # Physically remove hidden synced tasks whose due date is past (won't re-appear in future syncs)
-        self.task_repository.purge_hidden_overdue(now)
-
-    def _sync_schedule(self, slots: list[ScheduleSlot], result: SyncResult) -> None:
-        self._apply_with_record(
-            items=slots,
-            result=result,
-            payload_fn=self._payload_from_slot,
-            source_type="schedule",
-            local_type="schedule_slot",
-            repository=self.schedule_repository,
-            counter_prefix="schedule",
-        )
-
-    def _sync_exams(self, exams: list[Exam], result: SyncResult) -> None:
-        self._apply_with_record(
-            items=exams,
-            result=result,
-            payload_fn=lambda exam: self._payload(exam.raw_payload),
-            source_type="exam",
-            local_type="exam",
-            repository=self.exam_repository,
-            counter_prefix="exams",
-        )
-
-    def _apply_with_record(
-        self,
-        *,
-        items,
-        result: SyncResult,
-        payload_fn,
-        source_type: str,
-        local_type: str,
-        repository,
-        counter_prefix: str,
-    ) -> None:
-        """Shared upsert-with-sync-record loop for schedule slots and exams.
-
-        Tasks deliberately do NOT use this path — task sync skips already-known
-        external_ids rather than updating them, and runs a hidden-overdue purge
-        afterwards (see ``_sync_tasks``).
-        """
-        for item in items:
-            if not item.external_id:
-                continue
-            payload = payload_fn(item)
-            item.course_id = self._ensure_course(payload, result)
-            old_record = self.sync_repository.get_record(source_type, item.external_id)
-            raw_hash = self._hash_object(item)
-            existing = repository.find_by_external_id(item.external_id)
-
-            if existing is None:
-                repository.add(item)
-                status = "new"
-                setattr(result, f"{counter_prefix}_new", getattr(result, f"{counter_prefix}_new") + 1)
-            elif old_record is not None and old_record.raw_hash == raw_hash:
-                item.id = existing.id
-                status = "unchanged"
-                setattr(result, f"{counter_prefix}_unchanged", getattr(result, f"{counter_prefix}_unchanged") + 1)
-            else:
-                item.id = existing.id
-                repository.update(item)
-                status = "updated"
-                setattr(result, f"{counter_prefix}_updated", getattr(result, f"{counter_prefix}_updated") + 1)
-            self._record(source_type, item.external_id, local_type, item.id, raw_hash, status)
+        try:
+            self.task_repository.purge_hidden_overdue(now)
+        except Exception:
+            pass
 
     def _ensure_course(self, payload: dict[str, Any], result: SyncResult) -> int | None:
         external_id = coerce_str(payload.get("course_external_id"))

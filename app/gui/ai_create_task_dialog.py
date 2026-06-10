@@ -79,7 +79,7 @@ class AICreateDialog(QDialog):
 
         self.input_edit = QTextEdit()
         self.input_edit.setPlaceholderText(
-            "例如：每周三晚 7-9 点高数课，理教 303，1-16 周"
+            "例：每周三晚 7-9 点高数课，理教 303，1-16 周"
         )
         self.input_edit.setMinimumHeight(96)
         layout.addWidget(self.input_edit)

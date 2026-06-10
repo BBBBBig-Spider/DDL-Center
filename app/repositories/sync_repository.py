@@ -207,6 +207,75 @@ class SyncRepository:
         record.id = row["id"]
         return row["id"]
 
+    # ─── AI 复审缓存 ───────────────────────────────────────────
+
+    def get_ai_review(self, external_id: str) -> Optional[dict]:
+        """Return ``{decision_type, payload_json, reviewed_at}`` or None.
+
+        Backed by the ai_announcement_reviews table; one row per Blackboard
+        announcement external_id. Used by the AI fallback path so we never pay
+        for the same announcement twice.
+        """
+        if not isinstance(external_id, str) or not external_id:
+            raise ValueError("external_id must be a non-empty str")
+
+        conn = self.db_manager.get_connection()
+        cursor = conn.execute(
+            """
+            SELECT decision_type, payload_json, reviewed_at
+            FROM ai_announcement_reviews
+            WHERE external_id = ?
+            LIMIT 1
+            """,
+            (external_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "decision_type": row["decision_type"],
+            "payload_json": row["payload_json"],
+            "reviewed_at": row["reviewed_at"],
+        }
+
+    def set_ai_review(
+        self,
+        external_id: str,
+        decision_type: str,
+        payload_json: str = "",
+    ) -> None:
+        """Upsert an AI review decision, stamping reviewed_at to now."""
+        if not isinstance(external_id, str) or not external_id:
+            raise ValueError("external_id must be a non-empty str")
+        if not isinstance(decision_type, str) or not decision_type:
+            raise ValueError("decision_type must be a non-empty str")
+        if not isinstance(payload_json, str):
+            raise TypeError("payload_json must be str")
+
+        conn = self.db_manager.get_connection()
+        with conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO ai_announcement_reviews (
+                    external_id, decision_type, payload_json, reviewed_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    external_id,
+                    decision_type,
+                    payload_json,
+                    datetime.now().isoformat(),
+                ),
+            )
+
+    def clear_ai_reviews(self) -> int:
+        """Delete every cached AI announcement review. Returns number of rows removed."""
+        conn = self.db_manager.get_connection()
+        with conn:
+            cursor = conn.execute("DELETE FROM ai_announcement_reviews")
+        return cursor.rowcount
+
     # ─── 删 ────────────────────────────────────────────────────
 
     def delete(self, source_type: str, external_id: str) -> bool:

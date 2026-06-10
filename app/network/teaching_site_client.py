@@ -39,22 +39,30 @@ class TeachingSiteClient:
         "quiz",
     )
 
+    def __init__(self) -> None:
+        self._last_warnings: list[str] = []
+
+    def consume_warnings(self) -> list[str]:
+        out = list(self._last_warnings)
+        self._last_warnings = []
+        return out
+
     def fetch_courses(self, session: AuthSession) -> str:
         """Return raw HTML of the course list page."""
         url = f"{_BB_BASE}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1"
         return self._get(session, url)
 
-    def fetch_ddl(self, session: AuthSession, semester: str = "") -> str:
-        """Return raw HTML collected from course assignment/test pages.
+    def fetch_current_semester_ddl(self, session: AuthSession) -> str:
+        """Return raw HTML for current-semester courses' assignment pages only.
 
-        Blackboard does not expose a single global DDL endpoint on the current
-        PKU deployment. The reliable flow is:
-
-        1. open the logged-in portal page;
-        2. find course launcher links;
-        3. enter each course and find menu entries such as "课程作业"/"测验";
-        4. concatenate those content pages for DDLParser.
+        Same return shape as the legacy ``fetch_ddl`` (each course's
+        assignment list page is wrapped in
+        ``<div class="ddl-course-page" data-course-name=... data-course-external-id=...>``)
+        but courses outside ``<span class="moduleTitle">当前学期课程</span>``
+        are excluded; if the anchor is missing, falls back to the legacy
+        link extractor and records a warning on ``_last_warnings``.
         """
+        self._last_warnings = []
         home_urls = (
             f"{_BB_BASE}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_1_1",
             f"{_BB_BASE}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1",
@@ -63,19 +71,32 @@ class TeachingSiteClient:
         home_pages: list[str] = []
         course_links: list[str] = []
         seen_courses: set[str] = set()
+        any_anchor_found = False
         for home_url in home_urls:
             try:
                 home_page = self._get(session, home_url)
             except ConnectionError:
                 continue
             home_pages.append(home_page)
-            for course_url in self._extract_course_links(home_page):
+            scoped = self._extract_current_semester_course_links(home_page)
+            if scoped is None:
+                continue
+            any_anchor_found = True
+            for course_url in scoped:
                 if course_url not in seen_courses:
                     seen_courses.add(course_url)
                     course_links.append(course_url)
+
+        if not any_anchor_found:
+            self._last_warnings.append("未识别到当前学期分组，已退回旧版课程链接扫描")
+            for home_page in home_pages:
+                for course_url in self._extract_course_links(home_page):
+                    if course_url not in seen_courses:
+                        seen_courses.add(course_url)
+                        course_links.append(course_url)
+
         pages: list[str] = []
         seen: set[str] = set()
-
         for course_url in course_links:
             try:
                 course_page = self._get(session, course_url)
@@ -83,7 +104,15 @@ class TeachingSiteClient:
                 continue
             course_name = self._extract_course_name(course_page)
             course_external_id = self._extract_course_external_id(course_url)
-            for ddl_url in self._extract_ddl_links(course_page):
+            assignment_url = self._extract_assignment_link(course_page)
+            if assignment_url is None:
+                # No precise "课程作业" sidebar entry → skip this course
+                # entirely. Courses without an assignments menu (e.g.
+                # humanities seminars, PE) shouldn't trigger AI fallback
+                # or keyword guessing.
+                continue
+            ddl_urls = [assignment_url]
+            for ddl_url in ddl_urls:
                 if ddl_url in seen:
                     continue
                 seen.add(ddl_url)
@@ -101,6 +130,10 @@ class TeachingSiteClient:
         if not pages:
             return "\n".join(home_pages)
         return "\n".join(pages)
+
+    def fetch_ddl(self, session: AuthSession, semester: str = "") -> str:
+        """Backward-compat alias forwarding to ``fetch_current_semester_ddl``."""
+        return self.fetch_current_semester_ddl(session)
 
     def fetch_schedule(self, session: AuthSession, semester: str = "") -> str:
         """Return raw content of the course schedule (via Portal portlet)."""
@@ -130,9 +163,19 @@ class TeachingSiteClient:
     @staticmethod
     def _extract_course_external_id(url: str) -> str:
         import re
+        from urllib.parse import unquote
 
+        # Plain "course_id=_98087_1" — most direct ?course_id= URLs use this.
         match = re.search(r"course_id=([^&'\"\s<>]+)", url, flags=re.IGNORECASE)
-        return match.group(1).strip() if match else ""
+        if match:
+            return match.group(1).strip()
+        # Portal launcher form: "launcher?type=Course&id=PkId{key=_96253_1,...}".
+        # Try once verbatim, then once URL-decoded (some hrefs come encoded).
+        for candidate in (url, unquote(url)):
+            match = re.search(r"key=(_[A-Za-z0-9]+_\d+)", candidate)
+            if match:
+                return match.group(1).strip()
+        return ""
 
     @staticmethod
     def _extract_course_name(html: str) -> str:
@@ -178,6 +221,58 @@ class TeachingSiteClient:
                 seen.add(url)
                 links.append(url)
         return links
+
+    def _extract_current_semester_course_links(self, html: str) -> list[str] | None:
+        """Return current-semester-only course links, or None if anchor missing."""
+        soup = BeautifulSoup(html, "lxml")
+        anchor = None
+        for span in soup.find_all("span", class_="moduleTitle"):
+            if span.get_text(strip=True) == "当前学期课程":
+                anchor = span.find_parent(["h1", "h2", "h3", "h4"]) or span
+                break
+        if anchor is None:
+            return None
+
+        links: list[str] = []
+        seen: set[str] = set()
+        for node in anchor.find_all_next():
+            if node is anchor:
+                continue
+            # The portal layout puts the section title in <h2>, with <h3>
+            # subtitles INSIDE the section ("您有新课程加入您的学生角色").
+            # Only break on the next <h2> (i.e. the next sibling section
+            # such as "历史课程"). h3/h4 are subsections to keep walking.
+            if node.name == "h2" and node is not anchor:
+                break
+            if node.name != "a" or not node.has_attr("href"):
+                continue
+            href = node["href"]
+            href_l = href.lower()
+            # Accept either ?course_id=, /courses/<id>, or the portal launcher
+            # form ("launcher?type=Course&id=PkId{key=_98087_1,...}").
+            if not (
+                "course_id=" in href_l
+                or "/courses/" in href_l
+                or "type=course" in href_l
+                or "courseid" in href_l
+                or "key=_" in href
+            ):
+                continue
+            url = urljoin(_BB_BASE, href)
+            if url in seen:
+                continue
+            seen.add(url)
+            links.append(url)
+        return links
+
+    def _extract_assignment_link(self, course_page: str) -> str | None:
+        """Find the precise '课程作业' sidebar link; return None if absent."""
+        soup = BeautifulSoup(course_page, "lxml")
+        for node in soup.find_all("a", href=True):
+            text = node.get_text(" ", strip=True)
+            if text == "课程作业":
+                return urljoin(_BB_BASE, node["href"])
+        return None
 
     @staticmethod
     def _get(session: AuthSession, url: str) -> str:

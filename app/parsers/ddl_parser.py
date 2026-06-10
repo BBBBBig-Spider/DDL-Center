@@ -222,11 +222,41 @@ class DDLParser:
 
     def _parse_blackboard_due_time(self, text: str) -> Optional[datetime]:
         compact = re.sub(r"\s+", "", text)
+        # Some Blackboard pages use "到期日期" + Chinese week-day, e.g.
+        # "到期日期 2026年6月30日 星期二 下午11:59". The week-day token is
+        # informational; we skip it. "下午"/"晚" bumps the hour by 12 below.
+        weekday_token = "(?:星期[一二三四五六日天])?"
+        am_pm = "(?:晚|上午|下午|凌晨|中午)?"
+        # The "lab4" assignment page produces text like
+        #   "提交截止时间:lab4的提交时间为6月30日23:59"
+        # where the keyword 截止 sits 9 chars away from the date. Allow a
+        # short non-greedy gap (max 20 chars) so the keyword still anchors
+        # the search but doesn't have to be glued to the digits.
+        gap = ".{0,20}?"
         patterns = (
-            r"(?:提交)?(?:截止|结束)(?:时间)?(?:为|至|到)?[:：]?(?:北京时间)?(?P<month>\d{1,2})月(?P<day>\d{1,2})日?(?:晚|上午|下午)?(?P<hour>\d{1,2})[:：](?P<minute>\d{2})",
-            r"(?:提交)?(?:截止|结束)(?:时间)?(?:为|至|到)?[:：]?(?:北京时间)?(?P<year>\d{4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日?(?:晚|上午|下午)?(?P<hour>\d{1,2})[:：](?P<minute>\d{2})",
+            # 新版本"课程作业"侧栏 li 的 "结束时间: 2026-06-30 23:59:00"
+            # （compact 已剥空格，此处的 \s* 仅为兼容罕见的非空白填充）
+            (
+                r"结束时间[:：]\s*(?P<year>\d{4})-(?P<month>\d{1,2})-(?P<day>\d{1,2})"
+                r"\s*(?P<hour>\d{1,2})[:：](?P<minute>\d{2})(?:[:：]\d{2})?"
+            ),
+            # "到期日期 2026年6月30日 [星期X] 下午11:59"
+            (
+                rf"到期日期[:：]?(?P<year>\d{{4}})年(?P<month>\d{{1,2}})月(?P<day>\d{{1,2}})日?"
+                rf"{weekday_token}{am_pm}(?P<hour>\d{{1,2}})[:：](?P<minute>\d{{2}})"
+            ),
+            # "到期日期 6月30日 [星期X] 下午11:59" (no year)
+            (
+                rf"到期日期[:：]?(?P<month>\d{{1,2}})月(?P<day>\d{{1,2}})日?"
+                rf"{weekday_token}{am_pm}(?P<hour>\d{{1,2}})[:：](?P<minute>\d{{2}})"
+            ),
+            rf"(?:提交)?(?:截止|结束)(?:时间)?(?:为|至|到)?[:：]?(?:北京时间)?{gap}(?P<year>\d{{4}})年(?P<month>\d{{1,2}})月(?P<day>\d{{1,2}})日?(?:晚|上午|下午)?(?P<hour>\d{{1,2}})[:：](?P<minute>\d{{2}})",
+            rf"(?:提交)?(?:截止|结束)(?:时间)?(?:为|至|到)?[:：]?(?:北京时间)?{gap}(?P<month>\d{{1,2}})月(?P<day>\d{{1,2}})日?(?:晚|上午|下午)?(?P<hour>\d{{1,2}})[:：](?P<minute>\d{{2}})",
             r"(?:提交)?(?:截止|结束)(?:时间)?(?:为|至|到)?[:：]?(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})[T ]?(?P<hour>\d{1,2})[:：](?P<minute>\d{2})",
             r"(?:deadline|due)[:：]?(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})[T ]?(?P<hour>\d{1,2})[:：](?P<minute>\d{2})",
+            # Standalone "提交时间..." / "时间..." for short descriptions
+            # ("lab4 的提交时间为 6 月 30 日 23:59"). 不要求"截止/结束"前缀。
+            rf"(?:提交)?时间(?:为|是)?[:：]?(?:北京时间)?.{{0,12}}?(?P<month>\d{{1,2}})月(?P<day>\d{{1,2}})日?(?:晚|上午|下午)?(?P<hour>\d{{1,2}})[:：](?P<minute>\d{{2}})",
         )
         for pattern in patterns:
             match = re.search(pattern, compact, flags=re.IGNORECASE)
@@ -324,3 +354,209 @@ class DDLParser:
             seen.add(key)
             result.append(task)
         return result
+
+    # ─── AI 复审用：抽取候选公告 chunks ──────────────────────────
+
+    def extract_announcement_chunks(self, html: str) -> list[dict]:
+        """Return one entry per Blackboard contentListItem, regardless of
+        whether the hard parser would recognize it.
+
+        Each entry is a dict with::
+
+            {
+                "external_id": str,   # Blackboard item id, or hash fallback
+                "title": str,         # first non-empty heading/link text
+                "text": str,          # whole-item flattened text
+                "raw_html": str,      # str(item)
+            }
+
+        SyncManager filters by ``external_id`` afterwards so this method
+        deliberately doesn't itself try to decide which items are "new".
+        """
+        if not isinstance(html, str):
+            raise TypeError("html must be str")
+        if not html.strip():
+            return []
+
+        chunks: list[dict] = []
+        seen_ids: set[str] = set()
+
+        try:
+            soup = BeautifulSoup(html, "lxml")
+        except Exception:
+            soup = None
+
+        if soup is not None:
+            for item in soup.select(self.BLACKBOARD_ITEM_SELECTOR):
+                entry = self._chunk_from_item(item)
+                if entry is None:
+                    continue
+                if entry["external_id"] in seen_ids:
+                    continue
+                seen_ids.add(entry["external_id"])
+                chunks.append(entry)
+
+        # Fallback: concatenated Blackboard pages produce invalid multi-doc
+        # HTML; slice contentListItem blocks via regex too.
+        for item_html in re.findall(
+            r'(<li[^>]+id=["\']contentListItem:[\s\S]*?</li>)',
+            html,
+            flags=re.IGNORECASE,
+        ):
+            try:
+                item_soup = BeautifulSoup(item_html, "lxml")
+            except Exception:
+                continue
+            item = item_soup.select_one("li")
+            if item is None:
+                continue
+            entry = self._chunk_from_item(item)
+            if entry is None:
+                continue
+            if entry["external_id"] in seen_ids:
+                continue
+            seen_ids.add(entry["external_id"])
+            chunks.append(entry)
+
+        return chunks
+
+    @classmethod
+    def _chunk_from_item(cls, item: Tag) -> Optional[dict]:
+        title = cls._extract_text(item, "h3, h4, .itemTitle, a")
+        text = item.get_text(" ", strip=True)
+        if not title and not text:
+            return None
+        external_id = cls._announcement_external_id(item, title or text)
+        raw_html = str(item)
+        course_wrapper = item.find_parent(attrs={"data-course-external-id": True})
+        wrapped_course_id = (
+            coerce_str(course_wrapper.get("data-course-external-id"))
+            if course_wrapper else ""
+        )
+        wrapped_course_name = (
+            coerce_str(course_wrapper.get("data-course-name"))
+            if course_wrapper else ""
+        )
+        course_external_id = (
+            wrapped_course_id or cls._extract_course_external_id(raw_html)
+        )
+        return {
+            "external_id": external_id,
+            "title": title or text[:30],
+            "text": text,
+            "raw_html": raw_html,
+            "course_external_id": course_external_id,
+            "course_name": wrapped_course_name,
+        }
+
+    @staticmethod
+    def _announcement_external_id(item: Tag, title: str) -> str:
+        """Extract a stable external id for an announcement chunk.
+
+        Mirrors ``_blackboard_external_id`` but doesn't require a parsed
+        due_time — falls back to hashing the item's text + title when no
+        explicit id attribute exists.
+        """
+        candidates = [item.get("id"), item.get("data-content-id"), item.get("data-external-id")]
+        for node in item.find_all(True):
+            candidates.extend([node.get("id"), node.get("href"), node.get("name")])
+        for value in candidates:
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:180]
+        body = item.get_text(" ", strip=True)
+        digest = hashlib.sha256(f"{title}|{body}".encode("utf-8")).hexdigest()
+        return f"announcement-{digest[:16]}"
+
+    # ─── 新流程：从"课程作业"侧栏列表页解析 li ──────────────────
+
+    _DUE_LINE_RE = re.compile(r"结束时间[:：][^\n]*")
+
+    def parse_assignment_items(self, html: str) -> list[dict]:
+        if not isinstance(html, str):
+            raise TypeError("html must be str")
+        if not html.strip():
+            return []
+
+        items: list[dict] = []
+        seen_ids: set[str] = set()
+
+        try:
+            soup = BeautifulSoup(html, "lxml")
+        except Exception:
+            soup = None
+
+        if soup is not None:
+            for item in soup.select(self.BLACKBOARD_ITEM_SELECTOR):
+                entry = self._assignment_entry_from_item(item)
+                if entry is None:
+                    continue
+                if entry["external_id"] in seen_ids:
+                    continue
+                seen_ids.add(entry["external_id"])
+                items.append(entry)
+
+        for item_html in re.findall(
+            r'(<li[^>]+id=["\']contentListItem:[\s\S]*?</li>)',
+            html,
+            flags=re.IGNORECASE,
+        ):
+            try:
+                item_soup = BeautifulSoup(item_html, "lxml")
+            except Exception:
+                continue
+            item = item_soup.select_one("li")
+            if item is None:
+                continue
+            entry = self._assignment_entry_from_item(item)
+            if entry is None:
+                continue
+            if entry["external_id"] in seen_ids:
+                continue
+            seen_ids.add(entry["external_id"])
+            items.append(entry)
+
+        return items
+
+    @classmethod
+    def _assignment_entry_from_item(cls, item: Tag) -> Optional[dict]:
+        title = cls._extract_text(item, "h3, h4, .itemTitle, a")
+        text = item.get_text(" ", strip=True)
+        if not title and not text:
+            return None
+        if not title:
+            title = text[:30]
+
+        external_id = cls._announcement_external_id(item, title)
+        raw_html = str(item)
+        course_wrapper = item.find_parent(attrs={"data-course-external-id": True})
+        wrapped_course_id = (
+            coerce_str(course_wrapper.get("data-course-external-id"))
+            if course_wrapper else ""
+        )
+        wrapped_course_name = (
+            coerce_str(course_wrapper.get("data-course-name"))
+            if course_wrapper else ""
+        )
+        course_external_id = (
+            wrapped_course_id or cls._extract_course_external_id(raw_html)
+        )
+
+        due_time = DDLParser()._parse_blackboard_due_time(text)
+
+        # 描述：剔除 title 与"结束时间..."字段，trim 后作为 desc
+        desc = text
+        if title and title in desc:
+            desc = desc.replace(title, " ", 1)
+        desc = cls._DUE_LINE_RE.sub(" ", desc)
+        desc = re.sub(r"\s+", " ", desc).strip()
+
+        return {
+            "external_id": external_id,
+            "title": title,
+            "description": desc,
+            "due_time": due_time,
+            "course_external_id": course_external_id,
+            "course_name": wrapped_course_name,
+            "raw_html": raw_html,
+            "text": text,
+        }

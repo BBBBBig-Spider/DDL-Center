@@ -48,6 +48,22 @@ class TaskEditorDialog(QDialog):
         title.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {INK};")
         layout.addWidget(title)
 
+        # Show a clarifying banner for sync-sourced tasks so users know edits
+        # will not be overwritten by the next sync (TaskManager.update_task
+        # sets user_modified=True; SyncManager._sync_tasks then keeps the row
+        # as 'unchanged' rather than re-applying the upstream copy).
+        if self.task_data and str(get_field(self.task_data, "source", "") or "") == "sync":
+            sync_hint = QLabel(
+                "📌 此任务来自教学网同步。手动编辑后下次同步不会再覆盖你的修改。"
+            )
+            sync_hint.setWordWrap(True)
+            sync_hint.setStyleSheet(
+                f"background-color: {PKU_RED_LIGHT}; color: {TEXT}; "
+                f"border: 1px solid {BORDER}; border-radius: 6px; "
+                "padding: 8px 10px; font-size: 12px;"
+            )
+            layout.addWidget(sync_hint)
+
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setSpacing(10)

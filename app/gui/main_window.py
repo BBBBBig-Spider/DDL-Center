@@ -3,16 +3,17 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from app.gui.schedule_widget import ScheduleWidget
 from app.gui.settings_dialog import SettingsDialog
 from app.gui.statistics_window import StatisticsWindow
-from app.gui.sync_dialog import SyncDialog
 from app.gui.task_list_widget import TaskListWidget
+from app.gui.contact_page import ContactPage
 from app.gui.theme import BACKGROUND, BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, primary_button_style
 from app.gui.widgets.ai_briefing_panel import AIBriefingPanel
 from app.gui.widgets.ai_chat_panel import AIChatPanel
+from app.services import credentials_store
 
 
 class MainWindow(QMainWindow):
@@ -26,6 +27,7 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._connect_signals()
         self._switch_page("tasks")
+        self._refresh_login_status()
 
     def _init_ui(self) -> None:
         central_widget = QWidget()
@@ -61,14 +63,14 @@ class MainWindow(QMainWindow):
         self.schedule_page = ScheduleWidget(facade=self.facade)
         self.statistics_page = StatisticsWindow(facade=self.facade)
         self.ai_page = self._build_ai_page()
-        self.sync_page = self._build_sync_page()
+        self.contact_page = ContactPage()
 
         self.pages = {
             "tasks": self.task_list_page,
             "schedule": self.schedule_page,
             "statistics": self.statistics_page,
             "ai": self.ai_page,
-            "sync": self.sync_page,
+            "contact": self.contact_page,
         }
         for page in self.pages.values():
             self.content_area.addWidget(page)
@@ -122,15 +124,50 @@ class MainWindow(QMainWindow):
         self.nav_buttons["schedule"] = QPushButton("课程表")
         self.nav_buttons["statistics"] = QPushButton("进度统计")
         self.nav_buttons["ai"] = QPushButton("AI 助手")
-        self.nav_buttons["sync"] = QPushButton("同步")
+        self.nav_buttons["contact"] = QPushButton("联系作者")
 
         for button in self.nav_buttons.values():
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             layout.addWidget(button)
 
         layout.addStretch()
+
+        self.login_card = QFrame()
+        self.login_card.setObjectName("LoginCard")
+        self.login_card.setStyleSheet(
+            f"""
+            QFrame#LoginCard {{
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 6px;
+                padding: 6px;
+            }}
+            QFrame#LoginCard QLabel {{
+                color: #FFFFFF;
+                background: transparent;
+                font-size: 12px;
+            }}
+            QFrame#LoginCard QPushButton {{
+                background-color: rgba(255, 255, 255, 0.15);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 12px;
+                text-align: center;
+            }}
+            QFrame#LoginCard QPushButton:hover {{
+                background-color: {PKU_RED};
+            }}
+            """
+        )
+        self.login_card_layout = QVBoxLayout(self.login_card)
+        self.login_card_layout.setContentsMargins(8, 8, 8, 8)
+        self.login_card_layout.setSpacing(6)
+        layout.addWidget(self.login_card)
+
         developer = QLabel("Developed by\n@Roast_Spider 小组")
-        developer.setStyleSheet("color: #F3D9D9; font-size: 14px;")
+        developer.setStyleSheet("color: #F3D9D9; font-size: 12px;")
         layout.addWidget(developer)
         return sidebar
 
@@ -148,8 +185,7 @@ class MainWindow(QMainWindow):
 
         self.open_settings_button = QPushButton("AI 设置")
         self.open_ai_create_button = QPushButton("✨ 智能创建")
-        self.open_sync_button = QPushButton("同步教学网")
-        for button in [self.open_settings_button, self.open_ai_create_button, self.open_sync_button]:
+        for button in [self.open_settings_button, self.open_ai_create_button]:
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet(primary_button_style())
             actions.addWidget(button)
@@ -159,33 +195,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.ai_chat_panel, stretch=1)
         return page
 
-    def _build_sync_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(28, 28, 28, 28)
-        layout.setSpacing(12)
-
-        title = QLabel("教学网同步")
-        title.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {INK};")
-        open_button = QPushButton("打开同步窗口")
-        open_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        open_button.clicked.connect(self._open_sync_dialog)
-        open_button.setStyleSheet(primary_button_style() + "QPushButton { max-width: 140px; }")
-
-        layout.addWidget(title)
-        layout.addWidget(open_button)
-        layout.addStretch()
-        return page
-
     def _connect_signals(self) -> None:
         self.nav_buttons["tasks"].clicked.connect(lambda: self._switch_page("tasks"))
         self.nav_buttons["schedule"].clicked.connect(lambda: self._switch_page("schedule"))
         self.nav_buttons["statistics"].clicked.connect(lambda: self._switch_page("statistics"))
         self.nav_buttons["ai"].clicked.connect(lambda: self._switch_page("ai"))
-        self.nav_buttons["sync"].clicked.connect(lambda: self._switch_page("sync"))
+        self.nav_buttons["contact"].clicked.connect(lambda: self._switch_page("contact"))
         self.open_settings_button.clicked.connect(self._open_settings)
         self.open_ai_create_button.clicked.connect(self._open_ai_create_dialog)
-        self.open_sync_button.clicked.connect(self._open_sync_dialog)
 
     def _switch_page(self, page_key: str) -> None:
         page = self.pages[page_key]
@@ -228,15 +245,71 @@ class MainWindow(QMainWindow):
             if hasattr(self.briefing_panel, "refresh"):
                 self.briefing_panel.refresh()
 
-    def _open_sync_dialog(self) -> None:
-        dialog = SyncDialog(facade=self.facade, parent=self)
-        dialog.exec()
+    def _refresh_login_status(self) -> None:
+        while self.login_card_layout.count():
+            item = self.login_card_layout.takeAt(0)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.deleteLater()
+
+        username, _ = credentials_store.load()
+        if username:
+            label = QLabel(f"👤 {username}")
+            label.setStyleSheet("color: #FFFFFF; font-size: 12px; font-weight: 600;")
+            self.login_card_layout.addWidget(label)
+            logout_btn = QPushButton("退出登录")
+            logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            logout_btn.clicked.connect(self._handle_logout)
+            self.login_card_layout.addWidget(logout_btn)
+        else:
+            label = QLabel("🔓 未登录")
+            label.setStyleSheet("color: #FFFFFF; font-size: 12px;")
+            self.login_card_layout.addWidget(label)
+            login_btn = QPushButton("登录")
+            login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            login_btn.clicked.connect(self._handle_login)
+            self.login_card_layout.addWidget(login_btn)
+
+    def _handle_login(self) -> None:
+        from app.gui.login_dialog import LoginDialog
+        auth_client = None
+        if hasattr(self.facade, "get_auth_client"):
+            try:
+                auth_client = self.facade.get_auth_client()
+            except Exception:
+                auth_client = None
+        if auth_client is None:
+            QMessageBox.warning(self, "无法登录", "登录服务不可用。")
+            return
+        if LoginDialog.run(self, auth_client):
+            self._refresh_login_status()
+
+    def _handle_logout(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "退出登录",
+            "退出登录将删除本地所有同步的任务、考试和 AI 公告复审缓存。\n\n确定继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            counts = self.facade.logout_and_clear_sync_data()
+        except Exception as exc:
+            QMessageBox.critical(self, "退出失败", str(exc))
+            return
+        QMessageBox.information(
+            self,
+            "已退出登录",
+            (
+                f"已删除 {counts.get('tasks_deleted', 0)} 条同步任务、"
+                f"{counts.get('exams_deleted', 0)} 条同步考试、"
+                f"{counts.get('reviews_deleted', 0)} 条 AI 复审缓存。"
+            ),
+        )
+        self._refresh_login_status()
         if hasattr(self.task_list_page, "refresh_display"):
             self.task_list_page.refresh_display()
-        if hasattr(self.schedule_page, "refresh_schedule"):
-            self.schedule_page.refresh_schedule()
-        if hasattr(self.statistics_page, "refresh"):
-            self.statistics_page.refresh()
         if hasattr(self.briefing_panel, "refresh"):
             self.briefing_panel.refresh()
 

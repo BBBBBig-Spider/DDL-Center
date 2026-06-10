@@ -461,7 +461,11 @@ class ScheduleWidget(QWidget):
         except Exception as exc:
             print(f"[GUI] failed to load tasks for DDL markers: {exc}")
             return []
-        return [task for task in tasks if self._task_due_in_current_week(task)]
+        return [
+            task for task in tasks
+            if str(get_field(task, "status", "todo") or "todo").lower() != "done"
+            and self._task_due_in_current_week(task)
+        ]
 
     def _refresh_course_color_cache(self) -> None:
         if not self.facade or not hasattr(self.facade, "list_courses"):

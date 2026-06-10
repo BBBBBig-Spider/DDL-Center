@@ -109,6 +109,8 @@ class AIAssistantManager:
     def parse_task_from_text(self, raw_text: str) -> dict:
         """Backward-compatible task parser; delegates to parse_item_from_text."""
         item = self.parse_item_from_text(raw_text)
+        if item["type"] == "none":
+            raise ValueError("AI 未能识别出有效的任务/课程/考试信息")
         if item["type"] != "task":
             raise ValueError(
                 f"AI 识别为 {item['type']} 类型，请使用智能创建对话框"
@@ -166,6 +168,9 @@ class AIAssistantManager:
         if item_type is None or not isinstance(payload, dict):
             return self._fallback_parse_item(raw_text)
 
+        if item_type == "none":
+            return {"type": "none", "payload": {}}
+
         try:
             if item_type == "task":
                 cleaned = self._clean_task_payload(payload)
@@ -184,9 +189,11 @@ class AIAssistantManager:
         """Accept both ``{type, payload}`` envelopes and flat shapes."""
         raw_type = data.get("type")
         payload = data.get("payload")
-        if isinstance(raw_type, str) and isinstance(payload, dict):
+        if isinstance(raw_type, str):
             t = raw_type.strip().lower()
-            if t in ("task", "class", "exam"):
+            if t == "none":
+                return "none", payload if isinstance(payload, dict) else {}
+            if t in ("task", "class", "exam") and isinstance(payload, dict):
                 return t, payload
         # Flat shape heuristics — preserves backward compat with task-only LLM replies.
         has_weekday = "weekday" in data
@@ -329,7 +336,12 @@ class AIAssistantManager:
 
     @classmethod
     def _fallback_parse_item(cls, raw_text: str) -> dict:
-        """Regex fallback when the LLM is unavailable; classifies first then parses."""
+        """Regex fallback when the LLM is unavailable; classifies first then parses.
+
+        Returns ``{"type":"none","payload":{}}`` when the text doesn't yield a
+        usable task/class/exam shape, except for empty input which still raises
+        ValueError so callers can distinguish "nothing to parse" from "no signal".
+        """
         if not isinstance(raw_text, str) or not raw_text.strip():
             raise ValueError("AI 不可用，无法识别输入")
         text = raw_text.strip()
@@ -340,11 +352,14 @@ class AIAssistantManager:
             and not is_exam
         )
 
-        if is_exam:
-            return {"type": "exam", "payload": cls._fallback_parse_exam(text)}
-        if is_class:
-            return {"type": "class", "payload": cls._fallback_parse_class(text)}
-        return {"type": "task", "payload": cls._fallback_parse_task(text)}
+        try:
+            if is_exam:
+                return {"type": "exam", "payload": cls._fallback_parse_exam(text)}
+            if is_class:
+                return {"type": "class", "payload": cls._fallback_parse_class(text)}
+            return {"type": "task", "payload": cls._fallback_parse_task(text)}
+        except ValueError:
+            return {"type": "none", "payload": {}}
 
     @classmethod
     def _extract_time_range(cls, text: str) -> tuple[time | None, time | None]:
@@ -769,6 +784,48 @@ class AIAssistantManager:
             fallback=self._fallback_briefing(open_tasks),
         )
 
+    def compress_description(self, text: str, max_chars: int = 120) -> str:
+        if not isinstance(text, str):
+            return ""
+        if len(text) <= max_chars:
+            return text
+        if not self.is_available():
+            return self._truncate_description(text, max_chars)
+
+        prompt = self._format_prompt(
+            "compress_description.txt",
+            (
+                "你是中文助理。把下面的作业描述压缩为 <= {max_chars} 个汉字的一句话摘要。\n"
+                "描述：\n{text}"
+            ),
+            max_chars=max_chars,
+            text=text,
+        )
+        reply = self._safe_chat(
+            [
+                {"role": "system", "content": "你为学生压缩作业描述。直接输出结果。"},
+                {"role": "user", "content": prompt},
+            ],
+            fallback="",
+        )
+        cleaned = (reply or "").strip()
+        if not cleaned:
+            return self._truncate_description(text, max_chars)
+        if len(cleaned) > max_chars:
+            return self._truncate_description(cleaned, max_chars)
+        return cleaned
+
+    @staticmethod
+    def _truncate_description(text: str, max_chars: int) -> str:
+        if len(text) <= max_chars:
+            return text
+        head = text[: max_chars - 1]
+        for sep in ("。", "；", "\n", "！", "？"):
+            idx = head.rfind(sep)
+            if idx >= max_chars // 2:
+                return head[: idx + 1] + "…"
+        return head + "…"
+
     def summarize_ddl(self, raw_text: str) -> str:
         if not isinstance(raw_text, str):
             raise TypeError("raw_text must be str")
@@ -816,7 +873,11 @@ class AIAssistantManager:
             return False
 
     def is_available(self) -> bool:
-        return self.key_store.has_key() and self.today_token_usage() < AI_DAILY_TOKEN_LIMIT
+        if not self.key_store.has_key():
+            return False
+        if AI_DAILY_TOKEN_LIMIT == float("inf"):
+            return True
+        return self.today_token_usage() < AI_DAILY_TOKEN_LIMIT
 
     def today_token_usage(self) -> int:
         key = self.TOKEN_PREFIX + date.today().isoformat()
@@ -850,6 +911,8 @@ class AIAssistantManager:
         self.setting_repository.set(key, str(self.today_token_usage() + count))
 
     def _check_quota_or_raise(self, messages: list[dict]) -> None:
+        if AI_DAILY_TOKEN_LIMIT == float("inf"):
+            return
         estimated_tokens = self._estimate_input_tokens(messages)
         if self.today_token_usage() + estimated_tokens > AI_DAILY_TOKEN_LIMIT:
             raise AIQuotaExceededError("daily AI token limit exceeded")
