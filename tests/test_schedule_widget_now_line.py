@@ -88,23 +88,60 @@ def test_invalid_stored_color_falls_back_to_default(qapp):
 # ---------- visibility logic ----------
 
 
-def test_now_line_hidden_when_outside_class_hours(qapp, monkeypatch):
-    w = _make_widget(qapp)
-    # PERIODS first start ≈ 08:00 — pin "now" to 03:00 (well before).
-    fake_now = datetime.combine(date.today(), time(3, 0))
-
+def _patch_now(monkeypatch, fake_now):
     class _FakeDatetime:
         @staticmethod
         def now():
             return fake_now
-
     monkeypatch.setattr("app.gui.schedule_widget.datetime", _FakeDatetime)
+
+
+def test_now_line_visible_after_last_period(qapp, monkeypatch):
+    """At 21:31 — past the last period (ends 21:30) — the line should still
+    render, clamped to the bottom of the grid. Mirrors how DDL red lines
+    handle late-night deadlines like 23:59."""
+    w = _make_widget(qapp)
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(21, 31)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
     w._update_now_line()
-    # After update with out-of-range time → indicator is hidden (or never created).
-    if w._now_line is not None:
-        assert not w._now_line.isVisible()
-    if w._now_label is not None:
-        assert not w._now_label.isVisible()
+    assert w._now_line is not None
+    assert w._now_line.isVisible()
+
+
+def test_now_line_visible_before_first_period(qapp, monkeypatch):
+    """At 03:00 — before the first period starts — the line should still
+    render, clamped to the top of the grid."""
+    w = _make_widget(qapp)
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(3, 0)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
+    w._update_now_line()
+    assert w._now_line is not None
+    assert w._now_line.isVisible()
+
+
+def test_now_line_renders_when_week_has_zero_tasks(qapp, monkeypatch):
+    """Regression: when the current week has no tasks, _redraw_ddl_lines
+    used to early-return before activating the grid layout. The now-line
+    relies on that activation to compute cellRect, so it would never appear.
+    With the fix, the now-line should still render even at 21:31 (past the
+    last period) on a task-free week."""
+    w = _make_widget(qapp)
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(21, 31)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
+    # Trigger the full render pipeline (no tasks → previously returned early).
+    w._redraw_ddl_lines()
+    qapp.processEvents()
+    assert w._now_line is not None
+    assert w._now_line.isVisible()
 
 
 def test_now_line_hidden_when_not_current_week(qapp):

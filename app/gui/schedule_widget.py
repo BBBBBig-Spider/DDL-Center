@@ -829,9 +829,10 @@ class ScheduleWidget(QWidget):
 
         week_tasks = self._load_week_tasks()
         print(f"[DDL] week={self.current_week}, tasks_in_week={len(week_tasks)}")
-        if not week_tasks:
-            return
 
+        # Force a layout pass BEFORE we start querying cellRect — the now-line
+        # path also depends on this. Without it, _time_to_pixel_y returns None
+        # for every clamp branch and the now-line never shows up.
         self.grid_layout.activate()
         drawn = 0
 
@@ -931,9 +932,15 @@ class ScheduleWidget(QWidget):
         in_current_week = self.current_week == self._current_semester_week()
         # weekday(): Mon=0..Sun=6 → grid col 1..7
         today_col = now.weekday() + 1
-        in_class_window = self.PERIODS[0][1] <= now.time() <= self.PERIODS[-1][2]
 
-        if not (in_current_week and in_class_window):
+        # NOTE: do NOT bail out when ``now.time()`` is outside PERIODS — the
+        # line should still render, clamped to the top/bottom edge of the
+        # grid, exactly like the DDL red lines do for late-night deadlines
+        # (e.g. 23:59 falls past the last period at 21:30 but we still want
+        # to see it). ``_time_to_pixel_y`` already handles this via its
+        # head/tail clamps; we only hide the indicator when the user is
+        # browsing a different week.
+        if not in_current_week:
             if self._now_line is not None:
                 self._now_line.hide()
             if self._now_label is not None:
@@ -943,7 +950,15 @@ class ScheduleWidget(QWidget):
         col_rect = self.grid_layout.cellRect(1, today_col)
         y = self._time_to_pixel_y(now.time())
         if y is None or col_rect.width() <= 0:
-            return
+            # cellRect not ready yet — force a layout pass and try once more.
+            # This matters when we're called from the 5-minute timer (not via
+            # _redraw_ddl_lines) and the user hasn't resized the window since
+            # the page was first opened.
+            self.grid_layout.activate()
+            col_rect = self.grid_layout.cellRect(1, today_col)
+            y = self._time_to_pixel_y(now.time())
+            if y is None or col_rect.width() <= 0:
+                return
 
         color = self._get_now_line_color()
 
