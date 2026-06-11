@@ -1,0 +1,9 @@
+Break this study task into 3-6 actionable subtasks.
+Return a strict JSON array only. Each item must contain:
+- title: short action title
+- estimated_hours: positive number
+- note: short note
+
+Task: {description}
+Due time: {due_time}
+Today: {today}

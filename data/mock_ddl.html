@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<!--
+  data/mock_ddl.html — 教学网 DDL（作业/测验/论文/Lab）页面的本地样例数据。
+
+  用途（架构规划 Part 5.1 教学网保底）：
+  当真实 IAAA 登录或抓取失败时，SyncManager 读取本文件，
+  交给 DDLParser.parse() 产出 Task 列表，保证同步流程与演示不中断。
+
+  结构契约（与 app/parsers/ddl_parser.py 的 HTML 分支选择器对应）：
+    - 每条 DDL 是一个 .deadline-item 容器（div 或 li 均可）
+    - data-external-id   →  Task.external_id
+    - .title             →  Task 标题
+    - .course            →  课程名（写入 description）
+    - .course-external-id→  课程外部 ID（写入 raw_payload，供 SyncManager 解析课程归属）
+    - .due-time / .deadline → 截止时间（容忍多种日期格式）
+    - .kind / .type      →  作业类型（作业 / 测验 / 论文 / Lab）
+
+  注意：这是占位样例。等 scripts/probe_teaching_site.py 抓到真实页面后，
+  应以真实 DOM 覆盖本文件，并复核 DDLParser 的选择器。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>我的作业 - 教学网（样例数据）</title>
+</head>
+<body>
+  <h1>本学期待办 DDL</h1>
+  <ul class="deadline-list">
+
+    <li class="deadline-item" data-external-id="bb_ddl_1001">
+      <span class="title">作业一：词法分析器实现</span>
+      <span class="course">编译原理</span>
+      <span class="course-external-id">CS-COMP-101</span>
+      <span class="due-time">2026-06-05 23:59</span>
+      <span class="kind">作业</span>
+    </li>
+
+    <li class="deadline-item" data-external-id="bb_ddl_1002">
+      <span class="title">实验报告三：进程调度</span>
+      <span class="course">操作系统</span>
+      <span class="course-external-id">CS-OS-201</span>
+      <span class="due-time">2026-06-08 18:00</span>
+      <span class="kind">Lab</span>
+    </li>
+
+    <li class="deadline-item" data-external-id="bb_ddl_1003">
+      <span class="title">期中测验（线上）</span>
+      <span class="course">数据库系统概论</span>
+      <span class="course-external-id">CS-DB-202</span>
+      <span class="deadline">2026/06/12 14:00</span>
+      <span class="type">测验</span>
+    </li>
+
+    <li class="deadline-item" data-external-id="bb_ddl_1004">
+      <span class="title">课程论文：分布式一致性综述</span>
+      <span class="course">分布式系统</span>
+      <span class="course-external-id">CS-DS-301</span>
+      <span class="due-time">2026-06-20 23:59</span>
+      <span class="kind">论文</span>
+    </li>
+
+    <li class="deadline-item" data-external-id="bb_ddl_1005">
+      <span class="title">习题集第五章</span>
+      <span class="course">高等数学（B）</span>
+      <span class="course-external-id">MATH-CALC-105</span>
+      <span class="due-time">2026-06-03</span>
+      <span class="kind">作业</span>
+    </li>
+
+  </ul>
+</body>
+</html>

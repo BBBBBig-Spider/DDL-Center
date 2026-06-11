@@ -38,3 +38,7 @@ build/
 
 # Qt / generated UI files if needed later
 *.ui.autogen
+
+# Web
+*.html
+*_files/

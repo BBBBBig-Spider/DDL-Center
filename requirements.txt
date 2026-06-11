@@ -1,13 +1,21 @@
+# --- Core GUI & runtime ---
 PySide6>=6.6.0
 python-dotenv>=1.0.0
+
+# --- HTTP & PKU site scraping ---
 requests>=2.31.0
 beautifulsoup4>=4.12.0
-matplotlib>=3.8.0
-pycryptodome>=3.20.0
 lxml>=5.0.0
-pytest>=8.0.0
+pycryptodome>=3.20.0      # IAAA 登录所需的 RSA / PKCS#1 v1.5
 
-# AI 集成（DeepSeek，使用 OpenAI 兼容协议）
+# --- Data viz ---
+matplotlib>=3.8.0
+
+# --- AI 集成（DeepSeek，使用 OpenAI 兼容协议）---
 openai>=1.30.0
+
+# --- Secret 存储后备（首选 .env，其次 OS keyring）---
 keyring>=24.0.0
-cryptography>=42.0.0
+
+# --- 开发与测试 ---
+pytest>=8.0.0

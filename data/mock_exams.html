@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<!--
+  data/mock_exams.html — 教学网考试安排页面的本地样例数据。
+
+  用途（架构规划 Part 5.1 教学网保底）：
+  真实考试安排抓取失败时，SyncManager 读取本文件交给 ExamParser.parse()
+  产出 Exam 列表，保证考试同步与演示不中断。
+
+  结构契约（建议 ExamParser 的 HTML 分支按此选择器解析，
+  对应 app/models/exam.py 的 Exam 字段）：
+    - 每场考试是一个 .exam-item 容器
+    - data-external-id   →  Exam.external_id
+    - .name              →  考试名称
+    - .course            →  课程名
+    - .course-external-id→  课程外部 ID（供 SyncManager 解析课程归属）
+    - .start-time        →  考试开始时间（容忍多种日期格式）
+    - .end-time          →  考试结束时间
+    - .location          →  考试地点
+    - .exam-type         →  midterm / final / quiz / other
+
+  注意：占位样例。真实考试页面 DOM 抓到后以真实结构覆盖，并复核 ExamParser。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>考试安排 - 教学网（样例数据）</title>
+</head>
+<body>
+  <h1>本学期考试安排</h1>
+  <ul class="exam-list">
+
+    <li class="exam-item" data-external-id="bb_exam_3001">
+      <span class="name">编译原理 期末考试</span>
+      <span class="course">编译原理</span>
+      <span class="course-external-id">CS-COMP-101</span>
+      <span class="start-time">2026-06-25 08:30</span>
+      <span class="end-time">2026-06-25 10:30</span>
+      <span class="location">二教 309</span>
+      <span class="exam-type">final</span>
+    </li>
+
+    <li class="exam-item" data-external-id="bb_exam_3002">
+      <span class="name">操作系统 期末考试</span>
+      <span class="course">操作系统</span>
+      <span class="course-external-id">CS-OS-201</span>
+      <span class="start-time">2026-06-27 14:00</span>
+      <span class="end-time">2026-06-27 16:00</span>
+      <span class="location">三教 105</span>
+      <span class="exam-type">final</span>
+    </li>
+
+    <li class="exam-item" data-external-id="bb_exam_3003">
+      <span class="name">数据库系统概论 期中考试</span>
+      <span class="course">数据库系统概论</span>
+      <span class="course-external-id">CS-DB-202</span>
+      <span class="start-time">2026/05/15 10:00</span>
+      <span class="end-time">2026/05/15 11:40</span>
+      <span class="location">理教 208</span>
+      <span class="exam-type">midterm</span>
+    </li>
+
+    <li class="exam-item" data-external-id="bb_exam_3004">
+      <span class="name">高等数学（B）期末考试</span>
+      <span class="course">高等数学（B）</span>
+      <span class="course-external-id">MATH-CALC-105</span>
+      <span class="start-time">2026-06-30 08:30</span>
+      <span class="end-time">2026-06-30 10:30</span>
+      <span class="location">一教 101</span>
+      <span class="exam-type">final</span>
+    </li>
+
+  </ul>
+</body>
+</html>
