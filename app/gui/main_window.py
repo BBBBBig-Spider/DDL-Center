@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
         self.nav_buttons["schedule"] = QPushButton("课程表")
         self.nav_buttons["statistics"] = QPushButton("进度统计")
         self.nav_buttons["ai"] = QPushButton("AI 助手")
-        self.nav_buttons["general_settings"] = QPushButton("⚙ 通用设置")
+        self.nav_buttons["general_settings"] = QPushButton("通用设置")
         self.nav_buttons["contact"] = QPushButton("联系作者")
 
         for button in self.nav_buttons.values():
@@ -216,6 +216,13 @@ class MainWindow(QMainWindow):
             self.general_settings_page.now_line_color_changed.connect(
                 self.schedule_page.set_now_line_color
             )
+        # Refresh the login card avatar when the user changes it in settings.
+        if hasattr(self.general_settings_page, "avatar_changed"):
+            self.general_settings_page.avatar_changed.connect(self._on_avatar_changed)
+        if hasattr(self.general_settings_page, "display_name_changed"):
+            self.general_settings_page.display_name_changed.connect(
+                lambda _name: self._refresh_login_status()
+            )
 
     def _switch_page(self, page_key: str) -> None:
         page = self.pages[page_key]
@@ -267,7 +274,18 @@ class MainWindow(QMainWindow):
 
         username, _ = credentials_store.load()
         if username:
-            label = QLabel(f"👤 {username}")
+            display = self._get_display_name() or username
+            avatar_path = self._get_avatar_path()
+            if avatar_path:
+                from app.gui.general_settings_page import _make_circular_pixmap
+                avatar_label = QLabel()
+                avatar_label.setFixedSize(24, 24)
+                avatar_label.setStyleSheet("background: transparent;")
+                avatar_label.setPixmap(_make_circular_pixmap(avatar_path, 24))
+                self.login_card_layout.addWidget(avatar_label)
+                label = QLabel(display)
+            else:
+                label = QLabel(f"👤 {display}")
             label.setStyleSheet("color: #FFFFFF; font-size: 12px; font-weight: 600;")
             self.login_card_layout.addWidget(label)
             logout_btn = QPushButton("退出登录")
@@ -282,6 +300,39 @@ class MainWindow(QMainWindow):
             login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             login_btn.clicked.connect(self._handle_login)
             self.login_card_layout.addWidget(login_btn)
+
+    def _get_display_name(self) -> str:
+        """Read the user-set display name (preferred over the bare username)."""
+        repo = getattr(self.facade, "setting_repository", None)
+        if repo is None:
+            return ""
+        try:
+            value = repo.get("display_name", "")
+        except Exception:
+            return ""
+        return value.strip() if isinstance(value, str) else ""
+
+    def _get_avatar_path(self) -> str | None:
+        """Read the persisted avatar path from setting_repository if any.
+
+        Returns ``None`` when no path is set or the file no longer exists, so
+        the login card falls back to the default emoji."""
+        repo = getattr(self.facade, "setting_repository", None)
+        if repo is None:
+            return None
+        try:
+            value = repo.get("avatar_path", None)
+        except Exception:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            return None
+        from pathlib import Path
+        if not Path(value).is_file():
+            return None
+        return value
+
+    def _on_avatar_changed(self, _path: str) -> None:
+        self._refresh_login_status()
 
     def _handle_login(self) -> None:
         from app.gui.login_dialog import LoginDialog

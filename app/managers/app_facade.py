@@ -248,6 +248,12 @@ class AppFacade:
     def get_deepseek_api_key(self) -> str | None:
         return self._require("ai_assistant_manager").get_api_key()
 
+    def set_deepseek_model(self, model: str) -> None:
+        self._require("ai_assistant_manager").set_model(model)
+
+    def get_deepseek_model(self) -> str:
+        return self._require("ai_assistant_manager").get_model()
+
     def test_deepseek_api_key(self, key: str) -> bool:
         return self._require("ai_assistant_manager").test_api_key(key)
 

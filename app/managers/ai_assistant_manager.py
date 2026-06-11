@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
-from app.config import AI_DAILY_TOKEN_LIMIT, SEMESTER_START
+from app.config import AI_DAILY_TOKEN_LIMIT, DEEPSEEK_MODEL, SEMESTER_START
 from app.network.key_store import KeyStore
 from app.network.llm_client import LLMClient
 from app.network.network_errors import NetworkError
@@ -36,6 +36,7 @@ class AIAssistantManager:
         course_manager=None,
         key_store: KeyStore | None = None,
         llm_client_factory=LLMClient,
+        model: str | None = None,
     ) -> None:
         self.task_manager = task_manager
         self.alert_manager = alert_manager
@@ -45,10 +46,36 @@ class AIAssistantManager:
         self.course_manager = course_manager
         self.key_store = key_store or KeyStore(setting_repository)
         self.llm_client_factory = llm_client_factory
+        # Resolve initial model: explicit arg > stored setting > env default.
+        resolved_model = model
+        if resolved_model is None and setting_repository is not None:
+            try:
+                stored = setting_repository.get("deepseek_model", None)
+                if isinstance(stored, str) and stored.strip():
+                    resolved_model = stored.strip()
+            except Exception:
+                resolved_model = None
+        if resolved_model is None:
+            resolved_model = DEEPSEEK_MODEL
+        self.model = resolved_model
         self._conversation_seq = 0
         self._conversations: dict[int, list[dict[str, str]]] = {}
         self._summary_cache: dict[str, tuple[datetime, str]] = {}
         self._memory_token_usage: dict[str, int] = {}
+
+    def set_model(self, model: str) -> None:
+        """Change the model used for subsequent LLM calls and persist it."""
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("model name cannot be empty")
+        self.model = model.strip()
+        if self.setting_repository is not None:
+            try:
+                self.setting_repository.set("deepseek_model", self.model)
+            except Exception:
+                pass
+
+    def get_model(self) -> str:
+        return self.model
 
     def decompose_task(self, description: str, due_time: datetime) -> list[dict]:
         if not isinstance(description, str) or not description.strip():
@@ -866,7 +893,7 @@ class AIAssistantManager:
 
     def test_api_key(self, key: str) -> bool:
         try:
-            client = self.llm_client_factory(key)
+            client = self.llm_client_factory(key, model=self.model)
             client.chat([{"role": "user", "content": "ping"}], max_tokens=8)
             return True
         except Exception:
@@ -895,7 +922,7 @@ class AIAssistantManager:
             return fallback
         try:
             self._check_quota_or_raise(messages)
-            client = self.llm_client_factory(key)
+            client = self.llm_client_factory(key, model=self.model)
             reply, tokens = client.chat(messages)
             self._add_tokens(tokens)
             return reply.strip() or fallback

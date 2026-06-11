@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -43,6 +44,11 @@ class AISettingsDialog(QDialog):
         self.api_key_input.setPlaceholderText("sk-...")
         form.addRow("API Key:", self.api_key_input)
 
+        self.model_combo = QComboBox()
+        self.model_combo.setEditable(True)
+        self.model_combo.addItems(["deepseek-chat", "deepseek-reasoner"])
+        form.addRow("模型:", self.model_combo)
+
         usage_row = QHBoxLayout()
         self.usage_label = QLabel("今日 token 用量：未知")
         self.usage_label.setStyleSheet(f"color: {TEXT};")
@@ -71,6 +77,12 @@ class AISettingsDialog(QDialog):
                     self.api_key_input.setText(key)
             if hasattr(self.facade, "ai_today_token_usage"):
                 self.usage_label.setText(f"今日 token 用量：{self.facade.ai_today_token_usage()}")
+            if hasattr(self.facade, "get_deepseek_model"):
+                try:
+                    current_model = self.facade.get_deepseek_model() or "deepseek-chat"
+                    self.model_combo.setCurrentText(current_model)
+                except Exception:
+                    pass
         except Exception as exc:
             self.usage_label.setText(f"设置读取失败：{exc}")
 
@@ -102,4 +114,11 @@ class AISettingsDialog(QDialog):
             except Exception as exc:
                 QMessageBox.critical(self, "保存失败", str(exc))
                 return
+        if self.facade and hasattr(self.facade, "set_deepseek_model"):
+            model = self.model_combo.currentText().strip()
+            if model:
+                try:
+                    self.facade.set_deepseek_model(model)
+                except Exception as exc:
+                    QMessageBox.warning(self, "保存失败", f"模型保存失败：{exc}")
         self.accept()

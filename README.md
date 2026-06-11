@@ -23,7 +23,6 @@
 - [🕷️ DDL Command Center 🕷️](#️-ddl-command-center-️)
   - [📑 Table of Contents](#-table-of-contents)
   - [✨ Features](#-features)
-  - [📸 Screenshots](#-screenshots)
   - [🚀 Quick Start](#-quick-start)
   - [⚙️ Configuration](#️-configuration)
   - [📥 课表导入](#-课表导入)
@@ -50,15 +49,6 @@
 
 ---
 
-## 📸 Screenshots
-
-> _占位中。建议补 3 张截图到 `docs/screenshots/`，文件名与下表一致即可自动渲染。_
-
-| 任务管理 | 课程表 | AI 助手 |
-|---|---|---|
-| ![tasks](docs/screenshots/tasks.png) | ![schedule](docs/screenshots/schedule.png) | ![ai](docs/screenshots/ai.png) |
-
----
 
 ## 🚀 Quick Start
 

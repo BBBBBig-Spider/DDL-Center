@@ -18,6 +18,25 @@ from app.gui.theme import BORDER, INK, MUTED, PKU_GOLD, PKU_RED, PKU_RED_LIGHT, 
 try:
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
+
+    def _install_chinese_font() -> None:
+        """Pick the first available CJK-capable font in the system so matplotlib
+        no longer emits 'Glyph XXX missing from font' warnings on Chinese labels."""
+        import matplotlib
+        import matplotlib.font_manager as fm
+        candidates = ["Microsoft YaHei", "SimHei", "PingFang SC",
+                      "Noto Sans CJK SC", "WenQuanYi Zen Hei", "Arial Unicode MS"]
+        available = {f.name for f in fm.fontManager.ttflist}
+        chosen = next((c for c in candidates if c in available), None)
+        if chosen:
+            existing = matplotlib.rcParams.get("font.sans-serif", [])
+            # Prepend the chosen font so it wins over DejaVu Sans.
+            matplotlib.rcParams["font.sans-serif"] = [chosen] + [
+                f for f in existing if f != chosen
+            ]
+            matplotlib.rcParams["axes.unicode_minus"] = False
+
+    _install_chinese_font()
 except Exception:
     FigureCanvas = None
     Figure = None
