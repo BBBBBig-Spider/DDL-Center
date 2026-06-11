@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from app.gui.theme import INK, TEXT, form_control_style, primary_button_style
 
 
-class SettingsDialog(QDialog):
+class AISettingsDialog(QDialog):
     def __init__(self, facade=None, parent=None):
         super().__init__(parent)
         self.facade = facade
