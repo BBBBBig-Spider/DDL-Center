@@ -1,9 +1,40 @@
 import sys
+from pathlib import Path
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from app.gui.main_window import MainWindow
 from app.gui.theme import application_style
+
+
+_ASSETS = Path(__file__).resolve().parent / "gui" / "assets"
+APP_ICON_ICO = _ASSETS / "app_icon.ico"
+APP_ICON_PNG = _ASSETS / "app_icon.png"
+# Windows-only: a unique AppUserModelID makes the taskbar attach our QIcon
+# instead of grouping us under the python.exe icon. Format: company.product.subproduct.version
+WINDOWS_APP_ID = "RoastSpider.DDLCenter.App.1"
+
+
+def _load_app_icon() -> QIcon:
+    """Prefer .ico (multi-DPI on Windows); fall back to PNG."""
+    if APP_ICON_ICO.exists():
+        return QIcon(str(APP_ICON_ICO))
+    if APP_ICON_PNG.exists():
+        return QIcon(str(APP_ICON_PNG))
+    return QIcon()
+
+
+def _set_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    except Exception:
+        # Non-fatal: taskbar will fall back to the python.exe icon.
+        pass
 
 
 def build_facade():
@@ -91,10 +122,17 @@ def build_facade():
 
 
 def main() -> None:
+    _set_windows_app_id()
     app = QApplication(sys.argv)
     app.setStyleSheet(application_style())
 
+    icon = _load_app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
+
     window = MainWindow(build_facade())
+    if not icon.isNull():
+        window.setWindowIcon(icon)
     window.show()
 
     print("DDL Command Center started.")
