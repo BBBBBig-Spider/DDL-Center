@@ -4,7 +4,7 @@ import sys
 from datetime import date, datetime, time
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -54,8 +54,16 @@ class ScheduleWidget(QWidget):
         self.gui_task_arrangements = []
         self._next_local_slot_id = 1
         self._course_color_cache: dict[int, str] = {}  # course_id -> hex color
+        self._now_line: QFrame | None = None
+        self._now_label: QLabel | None = None
         self._init_ui()
         self.refresh_schedule()
+        # Refresh the "current time" indicator every 5 minutes. Stored as an
+        # attribute so tests / teardown can inspect it.
+        self._now_line_timer = QTimer(self)
+        self._now_line_timer.setInterval(5 * 60 * 1000)
+        self._now_line_timer.timeout.connect(self._update_now_line)
+        self._now_line_timer.start()
 
     def _reload_semester_settings(self) -> None:
         from app.config import SEMESTER_START
@@ -204,7 +212,40 @@ class ScheduleWidget(QWidget):
             """
         )
         self.week_combo.currentIndexChanged.connect(self.on_week_changed)
+
+        nav_button_style = f"""
+            QPushButton {{
+                background-color: {PKU_RED};
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: 700;
+                font-size: 14px;
+            }}
+            QPushButton:hover {{ background-color: {PKU_RED_DARK}; }}
+            QPushButton:disabled {{ background-color: #D0D0D0; color: #888; }}
+        """
+        self.prev_week_button = QPushButton("◀")
+        self.prev_week_button.setFixedSize(32, 32)
+        self.prev_week_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.prev_week_button.setToolTip("上一周 (Ctrl+Left)")
+        self.prev_week_button.setStyleSheet(nav_button_style)
+        self.prev_week_button.clicked.connect(
+            lambda: self.week_combo.setCurrentIndex(self.week_combo.currentIndex() - 1)
+        )
+        top_bar.addWidget(self.prev_week_button)
+
         top_bar.addWidget(self.week_combo)
+
+        self.next_week_button = QPushButton("▶")
+        self.next_week_button.setFixedSize(32, 32)
+        self.next_week_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.next_week_button.setToolTip("下一周 (Ctrl+Right)")
+        self.next_week_button.setStyleSheet(nav_button_style)
+        self.next_week_button.clicked.connect(
+            lambda: self.week_combo.setCurrentIndex(self.week_combo.currentIndex() + 1)
+        )
+        top_bar.addWidget(self.next_week_button)
 
         self.week_type_badge = QLabel("")
         self.week_type_badge.setStyleSheet(self._badge_style(PKU_RED))
@@ -214,6 +255,16 @@ class ScheduleWidget(QWidget):
         self.week_combo.setCurrentIndex(min(max(self.current_week, 1), self.week_combo.count()) - 1)
         self.week_combo.blockSignals(False)
         self._update_week_badge()
+        self._update_week_nav_buttons()
+
+        prev_shortcut = QShortcut(QKeySequence("Ctrl+Left"), self)
+        prev_shortcut.activated.connect(
+            lambda: self.prev_week_button.click() if self.prev_week_button.isEnabled() else None
+        )
+        next_shortcut = QShortcut(QKeySequence("Ctrl+Right"), self)
+        next_shortcut.activated.connect(
+            lambda: self.next_week_button.click() if self.next_week_button.isEnabled() else None
+        )
 
     def _setup_grid_frame(self) -> None:
         self._day_header_badges: dict[int, QLabel] = {}  # col -> badge label
@@ -262,6 +313,13 @@ class ScheduleWidget(QWidget):
         self.current_week = self.week_combo.itemData(index) or index + 1
         self._update_week_badge()
         self.refresh_schedule()
+        self._update_week_nav_buttons()
+
+    def _update_week_nav_buttons(self) -> None:
+        idx = self.week_combo.currentIndex()
+        last = self.week_combo.count() - 1
+        self.prev_week_button.setEnabled(idx > 0)
+        self.next_week_button.setEnabled(idx < last)
 
     def _update_week_badge(self) -> None:
         if self.current_week % 2 == 0:
@@ -309,6 +367,7 @@ class ScheduleWidget(QWidget):
             idx = max(0, self.current_week - 1)
             self.week_combo.setCurrentIndex(idx)
             self.week_combo.blockSignals(False)
+            self._update_week_nav_buttons()
             self.refresh_schedule()
 
     def set_gui_task_arrangements(self, arrangements) -> None:
@@ -749,7 +808,13 @@ class ScheduleWidget(QWidget):
         return None
 
     def _redraw_ddl_lines(self) -> None:
+        # Wipe DDL markers from a previous render but keep the "current time"
+        # indicator widgets intact — they have a longer lifecycle and are
+        # repositioned by _update_now_line, not recreated each redraw.
+        _NOW_INDICATOR_NAMES = {"scheduleNowLine", "scheduleNowLabel"}
         for child in self._ddl_overlay.findChildren(QWidget):
+            if child.objectName() in _NOW_INDICATOR_NAMES:
+                continue
             child.setParent(None)
             child.deleteLater()
 
@@ -820,6 +885,95 @@ class ScheduleWidget(QWidget):
             label.show()
             drawn += 1
         print(f"[DDL] drawn {drawn} marker(s)")
+        # Re-position the "current time" indicator after the DDL pass so it
+        # sits on top of any course/DDL widgets that were just inserted.
+        self._update_now_line()
+
+    # ------------------------------------------------------------------
+    # "Current time" indicator
+    # ------------------------------------------------------------------
+
+    NOW_LINE_DEFAULT_COLOR = "#3B82F6"
+    NOW_LINE_SETTING_KEY = "now_line_color"
+
+    def _get_now_line_color(self) -> str:
+        repo = getattr(self.facade, "setting_repository", None)
+        if repo is not None:
+            try:
+                stored = repo.get(self.NOW_LINE_SETTING_KEY, self.NOW_LINE_DEFAULT_COLOR)
+            except Exception:
+                stored = self.NOW_LINE_DEFAULT_COLOR
+            if isinstance(stored, str) and stored.startswith("#"):
+                return stored
+        return self.NOW_LINE_DEFAULT_COLOR
+
+    def set_now_line_color(self, hex_color: str) -> None:
+        """Public hook: called by MainWindow when GeneralSettingsPage
+        broadcasts the user's chosen color. Re-positions on the spot so the
+        change is visible without waiting for the 5-min timer."""
+        if not isinstance(hex_color, str) or not hex_color.startswith("#"):
+            return
+        self._update_now_line()
+
+    def _update_now_line(self) -> None:
+        """Render or hide the horizontal line showing where 'now' is.
+
+        Visible only when (a) the user is looking at the real current week and
+        (b) the current clock time falls inside the displayed PERIODS window.
+        Spans only the "today" column, sits on top of the DDL overlay.
+        """
+        # No overlay yet → page hasn't fully laid out; bail.
+        overlay = getattr(self, "_ddl_overlay", None)
+        if overlay is None:
+            return
+
+        now = datetime.now()
+        in_current_week = self.current_week == self._current_semester_week()
+        # weekday(): Mon=0..Sun=6 → grid col 1..7
+        today_col = now.weekday() + 1
+        in_class_window = self.PERIODS[0][1] <= now.time() <= self.PERIODS[-1][2]
+
+        if not (in_current_week and in_class_window):
+            if self._now_line is not None:
+                self._now_line.hide()
+            if self._now_label is not None:
+                self._now_label.hide()
+            return
+
+        col_rect = self.grid_layout.cellRect(1, today_col)
+        y = self._time_to_pixel_y(now.time())
+        if y is None or col_rect.width() <= 0:
+            return
+
+        color = self._get_now_line_color()
+
+        # Lazily create the two widgets (kept alive across redraws).
+        if self._now_line is None:
+            self._now_line = QFrame(overlay)
+            self._now_line.setObjectName("scheduleNowLine")
+        if self._now_label is None:
+            self._now_label = QLabel(overlay)
+            self._now_label.setObjectName("scheduleNowLabel")
+
+        self._now_line.setStyleSheet(f"background-color: {color}; border: none;")
+        self._now_line.setGeometry(col_rect.x(), y - 1, col_rect.width(), 2)
+
+        self._now_label.setText(f"现在 {now.strftime('%H:%M')}")
+        self._now_label.setStyleSheet(
+            f"background-color: {color}; color: white; padding: 1px 4px; "
+            "border-radius: 2px; font-size: 9px; font-weight: 700;"
+        )
+        self._now_label.adjustSize()
+        label_x = col_rect.x() + col_rect.width() - self._now_label.width() - 2
+        label_y = y - self._now_label.height() - 1
+        if label_y < 0:
+            label_y = y + 2
+        self._now_label.move(label_x, label_y)
+
+        self._now_line.raise_()
+        self._now_label.raise_()
+        self._now_line.show()
+        self._now_label.show()
 
     def _is_exact_period_slot(self, slot):
         start_time = self._coerce_time(get_field(slot, "start_time"))

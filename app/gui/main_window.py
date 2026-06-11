@@ -6,10 +6,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from app.gui.schedule_widget import ScheduleWidget
-from app.gui.settings_dialog import SettingsDialog
+from app.gui.ai_settings_dialog import AISettingsDialog
 from app.gui.statistics_window import StatisticsWindow
 from app.gui.task_list_widget import TaskListWidget
 from app.gui.contact_page import ContactPage
+from app.gui.general_settings_page import GeneralSettingsPage
 from app.gui.theme import BACKGROUND, BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, primary_button_style
 from app.gui.widgets.ai_briefing_panel import AIBriefingPanel
 from app.gui.widgets.ai_chat_panel import AIChatPanel
@@ -64,12 +65,14 @@ class MainWindow(QMainWindow):
         self.statistics_page = StatisticsWindow(facade=self.facade)
         self.ai_page = self._build_ai_page()
         self.contact_page = ContactPage()
+        self.general_settings_page = GeneralSettingsPage(self.facade)
 
         self.pages = {
             "tasks": self.task_list_page,
             "schedule": self.schedule_page,
             "statistics": self.statistics_page,
             "ai": self.ai_page,
+            "general_settings": self.general_settings_page,
             "contact": self.contact_page,
         }
         for page in self.pages.values():
@@ -124,6 +127,7 @@ class MainWindow(QMainWindow):
         self.nav_buttons["schedule"] = QPushButton("课程表")
         self.nav_buttons["statistics"] = QPushButton("进度统计")
         self.nav_buttons["ai"] = QPushButton("AI 助手")
+        self.nav_buttons["general_settings"] = QPushButton("⚙ 通用设置")
         self.nav_buttons["contact"] = QPushButton("联系作者")
 
         for button in self.nav_buttons.values():
@@ -200,9 +204,18 @@ class MainWindow(QMainWindow):
         self.nav_buttons["schedule"].clicked.connect(lambda: self._switch_page("schedule"))
         self.nav_buttons["statistics"].clicked.connect(lambda: self._switch_page("statistics"))
         self.nav_buttons["ai"].clicked.connect(lambda: self._switch_page("ai"))
+        self.nav_buttons["general_settings"].clicked.connect(lambda: self._switch_page("general_settings"))
         self.nav_buttons["contact"].clicked.connect(lambda: self._switch_page("contact"))
         self.open_settings_button.clicked.connect(self._open_settings)
         self.open_ai_create_button.clicked.connect(self._open_ai_create_dialog)
+        # Live-update the schedule's "current time" line color when the user
+        # changes it in General Settings.
+        if hasattr(self.general_settings_page, "now_line_color_changed") and hasattr(
+            self.schedule_page, "set_now_line_color"
+        ):
+            self.general_settings_page.now_line_color_changed.connect(
+                self.schedule_page.set_now_line_color
+            )
 
     def _switch_page(self, page_key: str) -> None:
         page = self.pages[page_key]
@@ -230,8 +243,8 @@ class MainWindow(QMainWindow):
         self._switch_page("tasks")
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(facade=self.facade, parent=self)
-        if dialog.exec() == SettingsDialog.DialogCode.Accepted and hasattr(self.briefing_panel, "refresh"):
+        dialog = AISettingsDialog(facade=self.facade, parent=self)
+        if dialog.exec() == AISettingsDialog.DialogCode.Accepted and hasattr(self.briefing_panel, "refresh"):
             self.briefing_panel.refresh()
 
     def _open_ai_create_dialog(self) -> None:
