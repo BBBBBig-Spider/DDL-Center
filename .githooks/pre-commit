@@ -1,0 +1,4 @@
+#!/bin/sh
+# Pre-commit hook entrypoint. Delegates to pre_commit_check.py so the real
+# logic stays in Python (works the same on Windows / macOS / Linux).
+exec python "$(dirname "$0")/pre_commit_check.py"

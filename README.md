@@ -69,6 +69,12 @@ python -m app.main
 
 首次启动会在 `data/ddl_center.db` 自动建库。
 
+> **贡献者请额外执行一次**：
+> ```bash
+> git config core.hooksPath .githooks
+> ```
+> 这会启用本地 pre-commit 钩子，自动拦截把头像 / 主题 / 同步缓存等**本地用户状态**误 push 到云端的行为。
+
 ---
 
 ## ⚙️ Configuration
