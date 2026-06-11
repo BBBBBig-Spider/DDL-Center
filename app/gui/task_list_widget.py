@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.gui.task_editor_dialog import TaskEditorDialog
-from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT
+from app.gui.theme import BORDER, INK, ACCENT, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT
 from app.gui._helpers import get_field
 
 
@@ -73,7 +73,7 @@ class TaskCardWidget(QFrame):
         course_name = self._get_field("course_name")
         course_text = str(course_name) if course_name else (f"课程 ID：{course_id}" if course_id else "通用任务")
         self.lbl_course = QLabel(course_text)
-        self.lbl_course.setStyleSheet(f"color: {PKU_RED}; font-size: 11px; font-weight: 500; background-color: transparent;")
+        self.lbl_course.setStyleSheet(f"color: {PRIMARY}; font-size: 11px; font-weight: 500; background-color: transparent;")
 
         info_layout.addWidget(self.lbl_title)
         info_layout.addWidget(self.lbl_desc)
@@ -113,7 +113,7 @@ class TaskCardWidget(QFrame):
         self.btn_confirm_done = QPushButton("标记完成")
         self.btn_confirm_done.setStyleSheet("QPushButton { background-color: #6B7D3A; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold;} QPushButton:hover { background-color: #56652E; }")
         self.btn_confirm_delete = QPushButton("完成并删除")
-        self.btn_confirm_delete.setStyleSheet(f"QPushButton {{ background-color: {PKU_RED}; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold;}} QPushButton:hover {{ background-color: {PKU_RED_DARK}; }}")
+        self.btn_confirm_delete.setStyleSheet(f"QPushButton {{ background-color: {PRIMARY}; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold;}} QPushButton:hover {{ background-color: {PRIMARY_DARK}; }}")
         confirm_layout.addWidget(self.btn_confirm_done)
         confirm_layout.addWidget(self.btn_confirm_delete)
         layout.addWidget(self.confirm_widget)
@@ -165,10 +165,10 @@ class TaskCardWidget(QFrame):
             priority = int(self._get_field("priority", 2))
         except (TypeError, ValueError):
             priority = 2
-        p_color = {1: PKU_RED, 2: "#B8860B", 3: "#6B7D3A"}.get(priority, "#BFBFBF")
-        bg_color = PKU_RED_LIGHT if self.is_selected else "#FFFFFF"
-        border_color = PKU_RED if self.is_selected else "#E8E8E8"
-        hover_bg = PKU_RED_LIGHT if self.is_selected else "#F9F9F9"
+        p_color = {1: PRIMARY, 2: "#B8860B", 3: "#6B7D3A"}.get(priority, "#BFBFBF")
+        bg_color = PRIMARY_LIGHT if self.is_selected else "#FFFFFF"
+        border_color = PRIMARY if self.is_selected else "#E8E8E8"
+        hover_bg = PRIMARY_LIGHT if self.is_selected else "#F9F9F9"
         self.setStyleSheet(
             f"""
             #{self.card_id} {{
@@ -271,8 +271,8 @@ class TaskCardWidget(QFrame):
                 padding: 6px 22px 6px 12px;
             }}
             QMenu::item:selected {{
-                background-color: {PKU_RED_LIGHT};
-                color: {PKU_RED};
+                background-color: {PRIMARY_LIGHT};
+                color: {PRIMARY};
             }}
             """
         )
@@ -347,15 +347,15 @@ class TaskListWidget(QWidget):
 
         self.top_layout = QHBoxLayout()
         self.btn_add_task = QPushButton("新增任务")
-        self.btn_add_task.setStyleSheet(f"QPushButton {{ background-color: {PKU_RED}; color: white; border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 13px; }} QPushButton:hover {{background-color: {PKU_RED_DARK};}} QPushButton:pressed {{background-color: #4A0B0B;}}")
+        self.btn_add_task.setStyleSheet(f"QPushButton {{ background-color: {PRIMARY}; color: white; border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 13px; }} QPushButton:hover {{background-color: {PRIMARY_DARK};}} QPushButton:pressed {{background-color: #4A0B0B;}}")
         self.btn_add_task.clicked.connect(self.show_add_task_dialog)
         self.top_layout.addWidget(self.btn_add_task)
 
         self.btn_sync = QPushButton("🔄 同步教学网")
         self.btn_sync.setStyleSheet(
-            f"QPushButton {{ background-color: #FFFFFF; color: {PKU_RED}; border: 1px solid {PKU_RED}; "
+            f"QPushButton {{ background-color: #FFFFFF; color: {PRIMARY}; border: 1px solid {PRIMARY}; "
             f"border-radius: 4px; padding: 6px 12px; font-weight: bold; font-size: 13px; }}"
-            f"QPushButton:hover {{ background-color: {PKU_RED_LIGHT}; }}"
+            f"QPushButton:hover {{ background-color: {PRIMARY_LIGHT}; }}"
             f"QPushButton:disabled {{ color: #999999; border-color: #CCCCCC; }}"
         )
         self.btn_sync.clicked.connect(self._trigger_sync)
@@ -384,7 +384,7 @@ class TaskListWidget(QWidget):
             QComboBox QAbstractItemView {{
                 background-color: #FFFFFF;
                 color: {INK};
-                selection-background-color: {PKU_RED_LIGHT};
+                selection-background-color: {PRIMARY_LIGHT};
                 selection-color: {INK};
             }}
             """
@@ -408,7 +408,7 @@ class TaskListWidget(QWidget):
             f"QPushButton {{ background-color: #FFFFFF; color: {TEXT}; border: 1px solid {BORDER}; "
             f"border-radius: 4px; padding: 6px 12px; font-size: 13px; }}"
             f"QPushButton:hover {{ background-color: #F0F0F0; }}"
-            f"QPushButton:checked {{ background-color: {PKU_GOLD}; color: #FFFFFF; border-color: {PKU_GOLD}; }}"
+            f"QPushButton:checked {{ background-color: {ACCENT}; color: #FFFFFF; border-color: {ACCENT}; }}"
         )
         self.btn_batch.setCheckable(True)
         self.btn_batch.clicked.connect(self.toggle_batch_mode)
@@ -420,7 +420,7 @@ class TaskListWidget(QWidget):
         self.batch_toolbar = QFrame()
         self.batch_toolbar.setObjectName("BatchToolbar")
         self.batch_toolbar.setStyleSheet(
-            f"QFrame#BatchToolbar {{ background-color: #FFF8E6; border: 1px solid {PKU_GOLD}; "
+            f"QFrame#BatchToolbar {{ background-color: #FFF8E6; border: 1px solid {ACCENT}; "
             f"border-radius: 6px; padding: 2px; }}"
             f"QFrame#BatchToolbar QLabel {{ background-color: transparent; color: {INK}; }}"
             f"QFrame#BatchToolbar QCheckBox {{ background-color: transparent; color: {INK}; }}"
@@ -453,9 +453,9 @@ class TaskListWidget(QWidget):
 
         self.btn_batch_delete = QPushButton("删除")
         self.btn_batch_delete.setStyleSheet(
-            f"QPushButton {{ background-color: {PKU_RED}; color: white; border: none; border-radius: 4px; "
+            f"QPushButton {{ background-color: {PRIMARY}; color: white; border: none; border-radius: 4px; "
             f"padding: 5px 14px; font-size: 12px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background-color: {PKU_RED_DARK}; }}"
+            f"QPushButton:hover {{ background-color: {PRIMARY_DARK}; }}"
             "QPushButton:disabled { background-color: #C0C0C0; }"
         )
         self.btn_batch_delete.clicked.connect(self._batch_delete)
@@ -494,9 +494,9 @@ class TaskListWidget(QWidget):
                 font-size: 12px;
             }}
             QTabBar::tab:selected {{
-                background-color: {PKU_RED_LIGHT};
+                background-color: {PRIMARY_LIGHT};
                 font-weight: 700;
-                color: {PKU_RED};
+                color: {PRIMARY};
                 border-color: #E7B8B8;
             }}
             QTabBar::tab:hover {{

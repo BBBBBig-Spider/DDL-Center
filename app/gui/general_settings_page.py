@@ -24,7 +24,7 @@ from app.gui.theme import (
     INK,
     PALETTE_LABELS,
     PALETTES,
-    PKU_RED,
+    PRIMARY,
     TEXT,
     _persist_palette_name,
     _read_active_palette_name,
@@ -138,7 +138,7 @@ class GeneralSettingsPage(QWidget):
 
         heading = QLabel("外观")
         heading.setStyleSheet(
-            f"font-size: 16px; font-weight: 700; color: {PKU_RED}; background: transparent;"
+            f"font-size: 16px; font-weight: 700; color: {PRIMARY}; background: transparent;"
         )
         outer.addWidget(heading)
 
@@ -208,7 +208,7 @@ class GeneralSettingsPage(QWidget):
 
         self._palette_pending_label = QLabel("")
         self._palette_pending_label.setStyleSheet(
-            f"color: {PKU_RED}; background: transparent; font-weight: 700;"
+            f"color: {PRIMARY}; background: transparent; font-weight: 700;"
         )
         palette_row.addWidget(self._palette_pending_label)
 
@@ -468,7 +468,7 @@ class GeneralSettingsPage(QWidget):
 
         heading = QLabel("账户")
         heading.setStyleSheet(
-            f"font-size: 16px; font-weight: 700; color: {PKU_RED}; background: transparent;"
+            f"font-size: 16px; font-weight: 700; color: {PRIMARY}; background: transparent;"
         )
         outer.addWidget(heading)
 

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.gui.theme import BORDER, INK, PKU_RED_LIGHT, TEXT, form_control_style, primary_button_style
+from app.gui.theme import BORDER, INK, PRIMARY_LIGHT, TEXT, form_control_style, primary_button_style
 from app.gui._helpers import get_field
 
 
@@ -58,7 +58,7 @@ class TaskEditorDialog(QDialog):
             )
             sync_hint.setWordWrap(True)
             sync_hint.setStyleSheet(
-                f"background-color: {PKU_RED_LIGHT}; color: {TEXT}; "
+                f"background-color: {PRIMARY_LIGHT}; color: {TEXT}; "
                 f"border: 1px solid {BORDER}; border-radius: 6px; "
                 "padding: 8px 10px; font-size: 12px;"
             )
@@ -111,7 +111,7 @@ class TaskEditorDialog(QDialog):
         self.ai_result_label = QLabel("")
         self.ai_result_label.setWordWrap(True)
         self.ai_result_label.setStyleSheet(
-            f"background-color: {PKU_RED_LIGHT}; color: {TEXT}; border: 1px solid {BORDER}; "
+            f"background-color: {PRIMARY_LIGHT}; color: {TEXT}; border: 1px solid {BORDER}; "
             "border-radius: 6px; padding: 8px; font-size: 12px;"
         )
         self.ai_result_label.hide()

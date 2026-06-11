@@ -12,6 +12,7 @@ from app.config import AI_DAILY_TOKEN_LIMIT, DEEPSEEK_MODEL, SEMESTER_START
 from app.network.key_store import KeyStore
 from app.network.llm_client import LLMClient
 from app.network.network_errors import NetworkError
+from app.utils.semester import compute_current_week
 
 
 class AIQuotaExceededError(RuntimeError):
@@ -778,11 +779,9 @@ class AIAssistantManager:
         schedule_lines = ""
         if self.schedule_manager is not None:
             try:
-                from app.config import SEMESTER_START
                 today = date.today()
                 today_weekday = today.isoweekday()
-                days_since_start = (today - SEMESTER_START).days
-                current_week = max(1, days_since_start // 7 + 1)
+                current_week = compute_current_week(self.setting_repository)
                 slots = self.schedule_manager.list_slots(current_week, today_weekday)
                 if slots:
                     schedule_lines = "\n".join(
@@ -1004,9 +1003,7 @@ class AIAssistantManager:
         if self.schedule_manager is not None:
             try:
                 today_weekday = date.today().isoweekday()
-                from app.config import SEMESTER_START
-                days_since_start = (date.today() - SEMESTER_START).days
-                current_week = max(1, days_since_start // 7 + 1)
+                current_week = compute_current_week(self.setting_repository)
                 slots = self.schedule_manager.list_slots(current_week, today_weekday)
                 if slots:
                     lines.append(f"\n【今日课表（第 {current_week} 周，周{today_weekday}）】")
@@ -1044,6 +1041,18 @@ class AIAssistantManager:
     def _build_schedule_context(self) -> list[str]:
         today = date.today()
         current_week = self._current_semester_week(today)
+        # The full-schedule iteration below historically capped at week 16;
+        # honour the user-configured ``semester_total_weeks`` (clamped to
+        # [1, 40]) so late-semester slots aren't silently dropped from the
+        # AI context. See REVIEW.md severe #2.
+        upper = 30
+        if self.setting_repository is not None:
+            try:
+                stored_total = self.setting_repository.get("semester_total_weeks", None)
+                if stored_total is not None:
+                    upper = max(1, min(40, int(stored_total)))
+            except Exception:
+                pass
         weekday_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
         lines: list[str] = [f"\n【当前周完整课表（第 {current_week} 周）】"]
 
@@ -1060,7 +1069,7 @@ class AIAssistantManager:
             lines.append("本周暂无课程。")
 
         all_slots_by_key = {}
-        for week in range(1, 17):
+        for week in range(1, upper + 1):
             for slot in self.schedule_manager.list_slots(week):
                 key = (
                     getattr(slot, "id", None),
@@ -1094,12 +1103,22 @@ class AIAssistantManager:
             lines.append(f"- 其余 {len(all_slots) - 80} 个时段已省略。")
         return lines
 
-    @staticmethod
-    def _current_semester_week(today: date) -> int:
-        days_since_start = (today - SEMESTER_START).days
-        if days_since_start < 0:
-            return 1
-        return max(1, min(16, days_since_start // 7 + 1))
+    def _current_semester_week(self, today: date | None = None) -> int:
+        """Compute the current semester week, honouring user-configured
+        ``semester_total_weeks`` (default 30, clamped to [1, 40]).
+
+        Historically this clamped to ``[1, 16]``, which meant any user whose
+        schedule extended past week 16 would see the AI context permanently
+        pinned to week 16 in late semester — every recommendation thereafter
+        was off by N weeks. See REVIEW.md severe #2.
+        """
+        # ``today`` is accepted for backwards compatibility with old callers
+        # that pre-computed it; the helper itself uses ``date.today()`` and
+        # the resulting week is identical when ``today`` matches the system
+        # clock. We delegate to ``compute_current_week`` so the upper bound
+        # tracks ``semester_total_weeks`` consistently with the rest of the
+        # codebase.
+        return compute_current_week(self.setting_repository)
 
     @staticmethod
     def _format_schedule_slot(slot) -> str:

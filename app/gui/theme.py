@@ -1,9 +1,42 @@
+# ── Real color constants (used to compose palettes) ─────────────
+# Each constant is a literal hex; named after its actual hue, NOT after
+# whatever role it plays in any specific palette.
+PKU_RED = "#8C1515"
+PKU_RED_DEEP = "#5F0F0F"
+PKU_RED_BLUSH = "#F8EAEA"
+PKU_GOLD = "#B8860B"
+
+THU_PURPLE = "#660874"
+THU_PURPLE_DEEP = "#4A0654"
+THU_PURPLE_BLUSH = "#F3E5F8"
+THU_PURPLE_ACCENT = "#9D4EDD"
+
+OCEAN_BLUE = "#1E40AF"
+OCEAN_BLUE_DEEP = "#1E3A8A"
+OCEAN_BLUE_BLUSH = "#DBEAFE"
+SKY_CYAN = "#0EA5E9"
+
+DARK_RED = "#7F1D1D"
+DARK_RED_DEEP = "#450A0A"
+DARK_RED_BLUSH = "#FEE2E2"
+AMBER_BROWN = "#92400E"
+
+# ── Palettes: map a theme name to its 10 semantic color slots ───
+# Slot semantics (NOT brand-specific):
+#   PRIMARY        — main brand/accent color (buttons, headings)
+#   PRIMARY_DARK   — hover / pressed state of PRIMARY
+#   PRIMARY_LIGHT  — soft tint for selection / hover backgrounds
+#   ACCENT         — secondary accent (highlights, badges)
+#   INK / TEXT / MUTED — text colors (high → low contrast)
+#   BORDER         — neutral divider color
+#   SURFACE        — card / dialog background
+#   BACKGROUND     — window / page background
 PALETTES = {
     "pku_red": {
-        "PKU_RED": "#8C1515",
-        "PKU_RED_DARK": "#5F0F0F",
-        "PKU_RED_LIGHT": "#F8EAEA",
-        "PKU_GOLD": "#B8860B",
+        "PRIMARY": PKU_RED,
+        "PRIMARY_DARK": PKU_RED_DEEP,
+        "PRIMARY_LIGHT": PKU_RED_BLUSH,
+        "ACCENT": PKU_GOLD,
         "INK": "#111827",
         "TEXT": "#4B5563",
         "MUTED": "#6B7280",
@@ -12,11 +45,10 @@ PALETTES = {
         "BACKGROUND": "#F7F3F0",
     },
     "thu_purple": {
-        # 清华紫主色 #660874（清华大学官方校色）
-        "PKU_RED": "#660874",
-        "PKU_RED_DARK": "#4A0654",
-        "PKU_RED_LIGHT": "#F3E5F8",
-        "PKU_GOLD": "#9D4EDD",
+        "PRIMARY": THU_PURPLE,
+        "PRIMARY_DARK": THU_PURPLE_DEEP,
+        "PRIMARY_LIGHT": THU_PURPLE_BLUSH,
+        "ACCENT": THU_PURPLE_ACCENT,
         "INK": "#111827",
         "TEXT": "#4B5563",
         "MUTED": "#6B7280",
@@ -25,12 +57,10 @@ PALETTES = {
         "BACKGROUND": "#F8F4FA",
     },
     "ocean_blue": {
-        # Name kept as PKU_RED for backwards compatibility — semantically the
-        # primary brand color slot, even when no longer red.
-        "PKU_RED": "#1E40AF",
-        "PKU_RED_DARK": "#1E3A8A",
-        "PKU_RED_LIGHT": "#DBEAFE",
-        "PKU_GOLD": "#0EA5E9",
+        "PRIMARY": OCEAN_BLUE,
+        "PRIMARY_DARK": OCEAN_BLUE_DEEP,
+        "PRIMARY_LIGHT": OCEAN_BLUE_BLUSH,
+        "ACCENT": SKY_CYAN,
         "INK": "#111827",
         "TEXT": "#4B5563",
         "MUTED": "#6B7280",
@@ -43,10 +73,10 @@ PALETTES = {
         # 用深灰做窗口 BACKGROUND（视觉上"深色"），SURFACE 卡片仍保持浅底，
         # 这样：(a) 红色字在浅底上对比度最强；(b) 不需要改全项目 59 处硬编码
         # 白色卡片底；(c) 用户感受到"深色模式"，主要由窗口背景体现。
-        "PKU_RED": "#7F1D1D",
-        "PKU_RED_DARK": "#450A0A",
-        "PKU_RED_LIGHT": "#FEE2E2",
-        "PKU_GOLD": "#92400E",
+        "PRIMARY": DARK_RED,
+        "PRIMARY_DARK": DARK_RED_DEEP,
+        "PRIMARY_LIGHT": DARK_RED_BLUSH,
+        "ACCENT": AMBER_BROWN,
         "INK": "#0F172A",
         "TEXT": "#1F2937",
         "MUTED": "#475569",
@@ -96,10 +126,10 @@ def _persist_palette_name(name: str) -> None:
 
 
 _active = PALETTES[_read_active_palette_name()]
-PKU_RED = _active["PKU_RED"]
-PKU_RED_DARK = _active["PKU_RED_DARK"]
-PKU_RED_LIGHT = _active["PKU_RED_LIGHT"]
-PKU_GOLD = _active["PKU_GOLD"]
+PRIMARY = _active["PRIMARY"]
+PRIMARY_DARK = _active["PRIMARY_DARK"]
+PRIMARY_LIGHT = _active["PRIMARY_LIGHT"]
+ACCENT = _active["ACCENT"]
 INK = _active["INK"]
 TEXT = _active["TEXT"]
 MUTED = _active["MUTED"]
@@ -111,7 +141,7 @@ BACKGROUND = _active["BACKGROUND"]
 def primary_button_style() -> str:
     return f"""
     QPushButton {{
-        background-color: {PKU_RED};
+        background-color: {PRIMARY};
         color: #FFFFFF;
         border: none;
         border-radius: 4px;
@@ -120,7 +150,7 @@ def primary_button_style() -> str:
         font-weight: 700;
     }}
     QPushButton:hover {{
-        background-color: {PKU_RED_DARK};
+        background-color: {PRIMARY_DARK};
     }}
     QPushButton:disabled {{
         background-color: #C9B8B8;
@@ -133,15 +163,15 @@ def secondary_button_style() -> str:
     return f"""
     QPushButton {{
         background-color: #FFFFFF;
-        color: {PKU_RED};
-        border: 1px solid {PKU_RED};
+        color: {PRIMARY};
+        border: 1px solid {PRIMARY};
         border-radius: 4px;
         padding: 6px 12px;
         font-size: 13px;
         font-weight: 700;
     }}
     QPushButton:hover {{
-        background-color: {PKU_RED_LIGHT};
+        background-color: {PRIMARY_LIGHT};
     }}
     """
 
@@ -163,12 +193,12 @@ def form_control_style() -> str:
         border: 1px solid {BORDER};
         border-radius: 4px;
         padding: 5px 7px;
-        selection-background-color: {PKU_RED_LIGHT};
+        selection-background-color: {PRIMARY_LIGHT};
         selection-color: {INK};
     }}
     QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
     QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {{
-        border-color: {PKU_RED};
+        border-color: {PRIMARY};
     }}
     QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled, QComboBox:disabled,
     QSpinBox:disabled, QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled,
@@ -180,7 +210,7 @@ def form_control_style() -> str:
     QComboBox QAbstractItemView {{
         background-color: #FFFFFF;
         color: {INK};
-        selection-background-color: {PKU_RED_LIGHT};
+        selection-background-color: {PRIMARY_LIGHT};
         selection-color: {INK};
     }}
     QCheckBox, QRadioButton, QGroupBox {{
@@ -192,8 +222,8 @@ def form_control_style() -> str:
     }}
     QDialogButtonBox QPushButton {{
         background-color: #FFFFFF;
-        color: {PKU_RED};
-        border: 1px solid {PKU_RED};
+        color: {PRIMARY};
+        border: 1px solid {PRIMARY};
         border-radius: 4px;
         padding: 6px 12px;
         font-size: 13px;
@@ -201,7 +231,7 @@ def form_control_style() -> str:
         min-width: 72px;
     }}
     QDialogButtonBox QPushButton:hover {{
-        background-color: {PKU_RED_LIGHT};
+        background-color: {PRIMARY_LIGHT};
     }}
     """
 
@@ -227,15 +257,15 @@ def application_style() -> str:
     }}
     QMessageBox QPushButton {{
         background-color: #FFFFFF;
-        color: {PKU_RED};
-        border: 1px solid {PKU_RED};
+        color: {PRIMARY};
+        border: 1px solid {PRIMARY};
         border-radius: 4px;
         padding: 6px 14px;
         min-width: 72px;
         font-weight: 700;
     }}
     QMessageBox QPushButton:hover {{
-        background-color: {PKU_RED_LIGHT};
+        background-color: {PRIMARY_LIGHT};
     }}
     QMenu {{
         background-color: #FFFFFF;
@@ -247,8 +277,8 @@ def application_style() -> str:
         color: {INK};
     }}
     QMenu::item:selected {{
-        background-color: {PKU_RED_LIGHT};
-        color: {PKU_RED};
+        background-color: {PRIMARY_LIGHT};
+        color: {PRIMARY};
     }}
     {form_control_style()}
     """

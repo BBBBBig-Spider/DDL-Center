@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from app.gui.add_schedule_dialog import AddCourseDialog
 from app.gui.import_schedule_dialog import ImportScheduleDialog
-from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
+from app.gui.theme import BORDER, INK, ACCENT, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, secondary_button_style
 from app.gui._helpers import get_field
 
 
@@ -146,8 +146,8 @@ class ScheduleWidget(QWidget):
                 font-size: 13px;
             }}
             QCheckBox::indicator:checked {{
-                background-color: {PKU_RED};
-                border: 1px solid {PKU_RED};
+                background-color: {PRIMARY};
+                border: 1px solid {PRIMARY};
             }}
             QCheckBox::indicator {{
                 width: 14px;
@@ -206,7 +206,7 @@ class ScheduleWidget(QWidget):
             QComboBox QAbstractItemView {{
                 background-color: #FFFFFF;
                 color: {INK};
-                selection-background-color: {PKU_RED_LIGHT};
+                selection-background-color: {PRIMARY_LIGHT};
                 selection-color: {INK};
             }}
             """
@@ -215,14 +215,14 @@ class ScheduleWidget(QWidget):
 
         nav_button_style = f"""
             QPushButton {{
-                background-color: {PKU_RED};
+                background-color: {PRIMARY};
                 color: white;
                 border: none;
                 border-radius: 4px;
                 font-weight: 700;
                 font-size: 14px;
             }}
-            QPushButton:hover {{ background-color: {PKU_RED_DARK}; }}
+            QPushButton:hover {{ background-color: {PRIMARY_DARK}; }}
             QPushButton:disabled {{ background-color: #D0D0D0; color: #888; }}
         """
         self.prev_week_button = QPushButton("◀")
@@ -248,7 +248,7 @@ class ScheduleWidget(QWidget):
         top_bar.addWidget(self.next_week_button)
 
         self.week_type_badge = QLabel("")
-        self.week_type_badge.setStyleSheet(self._badge_style(PKU_RED))
+        self.week_type_badge.setStyleSheet(self._badge_style(PRIMARY))
         top_bar.addWidget(self.week_type_badge)
         self.main_layout.addLayout(top_bar)
         self.week_combo.blockSignals(True)
@@ -274,14 +274,14 @@ class ScheduleWidget(QWidget):
                 header = QLabel(day_name)
                 header.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 header.setStyleSheet(
-                    f"background-color: {PKU_RED_DARK}; color: white; padding: 9px; "
+                    f"background-color: {PRIMARY_DARK}; color: white; padding: 9px; "
                     "font-weight: 700; border-radius: 4px;"
                 )
                 self.grid_layout.addWidget(header, 0, col)
             else:
                 container = QFrame()
                 container.setStyleSheet(
-                    f"QFrame {{ background-color: {PKU_RED}; border-radius: 4px; }}"
+                    f"QFrame {{ background-color: {PRIMARY}; border-radius: 4px; }}"
                     "QFrame QLabel { background-color: transparent; }"
                 )
                 vbox = QVBoxLayout(container)
@@ -324,10 +324,10 @@ class ScheduleWidget(QWidget):
     def _update_week_badge(self) -> None:
         if self.current_week % 2 == 0:
             self.week_type_badge.setText("双周")
-            self.week_type_badge.setStyleSheet(self._badge_style(PKU_GOLD))
+            self.week_type_badge.setStyleSheet(self._badge_style(ACCENT))
         else:
             self.week_type_badge.setText("单周")
-            self.week_type_badge.setStyleSheet(self._badge_style(PKU_RED))
+            self.week_type_badge.setStyleSheet(self._badge_style(PRIMARY))
 
     def on_add_course_clicked(self):
         dialog = AddCourseDialog(self)
@@ -381,7 +381,7 @@ class ScheduleWidget(QWidget):
         is_exam_week = self._is_current_exam_week()
         if is_exam_week:
             self.week_type_badge.setText("考试周")
-            self.week_type_badge.setStyleSheet(self._badge_style(PKU_GOLD))
+            self.week_type_badge.setStyleSheet(self._badge_style(ACCENT))
         else:
             for slot in self._load_schedule_slots():
                 if not self._slot_occurs_this_week(slot):
@@ -644,7 +644,7 @@ class ScheduleWidget(QWidget):
         if not self._is_exact_period_slot(slot):
             time_label = QLabel(self._slot_time_text(slot))
             time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            time_label.setStyleSheet(f"color: {PKU_RED_DARK}; font-size: 9px; font-weight: 700;")
+            time_label.setStyleSheet(f"color: {PRIMARY_DARK}; font-size: 9px; font-weight: 700;")
             layout.addWidget(time_label)
 
         title = QLabel(str(get_field(slot, "title", "未命名课程")))
@@ -680,7 +680,7 @@ class ScheduleWidget(QWidget):
             f"""
             QFrame#examCard {{
                 background-color: #FFF8E6;
-                border: 2px solid {PKU_GOLD};
+                border: 2px solid {ACCENT};
                 border-radius: 6px;
             }}
             QFrame#examCard QLabel {{
@@ -731,7 +731,7 @@ class ScheduleWidget(QWidget):
             f"""
             QFrame#taskArrangementCard {{
                 background-color: #FFF8E6;
-                border: 1px dashed {PKU_GOLD};
+                border: 1px dashed {ACCENT};
                 border-radius: 6px;
             }}
             QFrame#taskArrangementCard QLabel {{
@@ -861,12 +861,12 @@ class ScheduleWidget(QWidget):
                 )
                 continue
             line = QFrame(self._ddl_overlay)
-            line.setStyleSheet(f"background-color: {PKU_RED}; border: none;")
+            line.setStyleSheet(f"background-color: {PRIMARY}; border: none;")
             line.setGeometry(col_rect.x(), y - 1, col_rect.width(), 2)
             label_text = f"DDL {due_time.strftime('%H:%M')} · {title_str}"
             label = QLabel(label_text, self._ddl_overlay)
             label.setStyleSheet(
-                f"background-color: {PKU_RED}; color: white; padding: 1px 4px; "
+                f"background-color: {PRIMARY}; color: white; padding: 1px 4px; "
                 "border-radius: 2px; font-size: 9px; font-weight: 700;"
             )
             label.adjustSize()
@@ -908,12 +908,19 @@ class ScheduleWidget(QWidget):
                 return stored
         return self.NOW_LINE_DEFAULT_COLOR
 
-    def set_now_line_color(self, hex_color: str) -> None:
+    def refresh_now_line(self, *_args) -> None:
         """Public hook: called by MainWindow when GeneralSettingsPage
-        broadcasts the user's chosen color. Re-positions on the spot so the
-        change is visible without waiting for the 5-min timer."""
-        if not isinstance(hex_color, str) or not hex_color.startswith("#"):
-            return
+        broadcasts the user's chosen color. The actual color is read from
+        ``setting_repository`` inside ``_update_now_line`` — this method
+        is just a "settings changed, please re-render now" signal so the
+        change is visible without waiting for the 5-min timer.
+
+        The previous name (``set_now_line_color(hex_color)``) lied about
+        its contract: the ``hex_color`` parameter was validated and then
+        thrown away. See REVIEW.md severe #3. ``*_args`` swallows the
+        signal payload (a hex string) so this still slots into existing
+        ``Signal[str].connect(...)`` wiring.
+        """
         self._update_now_line()
 
     def _update_now_line(self) -> None:
@@ -1016,8 +1023,8 @@ class ScheduleWidget(QWidget):
                 padding: 6px 22px 6px 12px;
             }}
             QMenu::item:selected {{
-                background-color: {PKU_RED_LIGHT};
-                color: {PKU_RED};
+                background-color: {PRIMARY_LIGHT};
+                color: {PRIMARY};
             }}
             """
         )
@@ -1100,10 +1107,18 @@ class ScheduleWidget(QWidget):
         return days // 7 + 1 == self.current_week
 
     def _current_semester_week(self) -> int:
-        days = (date.today() - self._semester_start).days
-        if days < 0:
-            return 1
-        return max(1, min(self._total_weeks, days // 7 + 1))
+        # Delegate to the shared helper so a user's "semester start" change
+        # is reflected consistently across managers and widgets. The widget
+        # already resolves its own ``_semester_start`` and ``_total_weeks``
+        # from the facade in ``_reload_semester_settings``, so we pass them
+        # in as fallbacks rather than re-reading the repo here.
+        from app.utils.semester import compute_current_week
+        repo = getattr(self.facade, "setting_repository", None) if self.facade else None
+        return compute_current_week(
+            repo,
+            fallback_start=self._semester_start,
+            fallback_upper=self._total_weeks,
+        )
 
     @staticmethod
     def _badge_style(color):

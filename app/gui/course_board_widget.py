@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from app.gui.task_list_widget import TaskCardWidget
-from app.gui.theme import BORDER, INK, PKU_RED, PKU_RED_LIGHT
+from app.gui.theme import BORDER, INK, PRIMARY, PRIMARY_LIGHT
 from app.gui._helpers import get_field
 
 
@@ -43,7 +43,7 @@ class CourseColumnWidget(QFrame):
         title.setStyleSheet(f"color: {INK}; font-weight: 700; font-size: 15px;")
         count = QLabel(f"{len(tasks)} 项")
         count.setStyleSheet(
-            f"background-color: {PKU_RED_LIGHT}; color: {PKU_RED}; "
+            f"background-color: {PRIMARY_LIGHT}; color: {PRIMARY}; "
             "padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 700;"
         )
         header_layout.addWidget(title)

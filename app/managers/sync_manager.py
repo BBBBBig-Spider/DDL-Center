@@ -61,6 +61,11 @@ class SyncManager:
         except Exception as exc:
             raise SyncError(str(exc)) from exc
 
+        # Outer try is intentionally narrow: it only wraps the fetch + parse
+        # pair, because those are "all or nothing" for a sync run — no items
+        # means nothing to process. Per-item failures inside
+        # ``_process_assignment_items`` are caught individually so one bad
+        # task can't silently abort the whole batch. See REVIEW.md severe #5.
         try:
             raw = self.teaching_site_client.fetch_current_semester_ddl(session)
             warnings = getattr(self.teaching_site_client, "_last_warnings", None) or []
@@ -70,12 +75,19 @@ class SyncManager:
             try:
                 # 让 client 自行清空（如有）
                 self.teaching_site_client._last_warnings = []
-            except Exception:
-                pass
+            except Exception as exc:
+                # Best-effort cleanup; surfaces in stdout for debugging but
+                # never aborts the sync.
+                print(f"[SYNC] failed to clear client warnings: {exc}")
             items = self.ddl_parser.parse_assignment_items(raw)
-            self._process_assignment_items(items, result)
         except Exception as exc:
             result.errors.append(f"DDL同步失败：{exc}")
+            return result
+
+        # Per-item processing has its own internal try/except per item, so
+        # we don't wrap it in a try here — letting an unexpected programmer
+        # error bubble up is preferable to swallowing it as "DDL同步失败".
+        self._process_assignment_items(items, result)
         return result
 
     def _login(
@@ -94,19 +106,29 @@ class SyncManager:
     def _process_assignment_items(self, items: list[dict], result: SyncResult) -> None:
         now = datetime.now()
         for item in items:
-            due = item.get("due_time")
-            if due is not None and due < now:
-                result.tasks_dropped_overdue += 1
+            # Each item is wrapped so a single bad payload can't abort the
+            # entire batch. We surface the failure on ``result.errors`` with
+            # enough identifier to track it down. See REVIEW.md severe #5.
+            try:
+                due = item.get("due_time")
+                if due is not None and due < now:
+                    result.tasks_dropped_overdue += 1
+                    continue
+                if due is None:
+                    self._ai_resolve_missing_due(item, result, now)
+                    continue
+                self._upsert_sync_task(item, due, result, now)
+            except Exception as exc:
+                ext_id = item.get("external_id") or item.get("title") or "?"
+                result.errors.append(f"task {ext_id}: {exc}")
                 continue
-            if due is None:
-                self._ai_resolve_missing_due(item, result, now)
-                continue
-            self._upsert_sync_task(item, due, result, now)
 
         try:
             self.task_repository.purge_hidden_overdue(now)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Cleanup of hidden-overdue rows is best-effort; failing it
+            # shouldn't poison the whole sync result.
+            print(f"[SYNC] purge_hidden_overdue failed: {exc}")
 
     def _upsert_sync_task(
         self,
@@ -312,8 +334,9 @@ class SyncManager:
             result.tasks_new += 1
         try:
             self.task_repository.purge_hidden_overdue(now)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Best-effort cleanup of hidden-overdue rows; never fatal.
+            print(f"[SYNC] purge_hidden_overdue failed (legacy path): {exc}")
 
     def _ensure_course(self, payload: dict[str, Any], result: SyncResult) -> int | None:
         external_id = coerce_str(payload.get("course_external_id"))

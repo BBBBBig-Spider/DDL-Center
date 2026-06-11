@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
-from app.gui.theme import BORDER, INK, PKU_RED, PKU_RED_LIGHT, TEXT
+from app.gui.theme import BORDER, INK, PRIMARY, PRIMARY_LIGHT, TEXT
 from app.gui._helpers import get_field
 
 
@@ -61,14 +61,14 @@ class AIBriefingPanel(QFrame):
             f"""
             QPushButton {{
                 background-color: #FFFFFF;
-                color: {PKU_RED};
-                border: 1px solid {PKU_RED};
+                color: {PRIMARY};
+                border: 1px solid {PRIMARY};
                 border-radius: 4px;
                 padding: 5px 8px;
                 font-size: 12px;
             }}
             QPushButton:hover {{
-                background-color: {PKU_RED_LIGHT};
+                background-color: {PRIMARY_LIGHT};
             }}
             """
         )

@@ -157,17 +157,36 @@ def test_now_line_hidden_when_not_current_week(qapp):
 # ---------- live color update ----------
 
 
-def test_set_now_line_color_accepts_valid_hex(qapp):
+def test_refresh_now_line_does_not_crash(qapp):
     w = _make_widget(qapp)
-    # Should not raise on a valid hex.
-    w.set_now_line_color("#FF8800")
+    # Should not raise, regardless of any payload the signal carries.
+    w.refresh_now_line("#FF8800")
 
 
-def test_set_now_line_color_ignores_garbage(qapp):
+def test_refresh_now_line_ignores_garbage(qapp):
     w = _make_widget(qapp)
-    # Should not raise on bogus input.
-    w.set_now_line_color("garbage")
-    w.set_now_line_color(None)  # type: ignore[arg-type]
+    # Should not raise on bogus payloads either — the method ignores its
+    # arguments entirely (the real source of truth is setting_repository).
+    w.refresh_now_line("garbage")
+    w.refresh_now_line(None)
+    w.refresh_now_line()
+
+
+def test_refresh_now_line_picks_up_new_color_from_repo(qapp, monkeypatch):
+    """Bug #3 regression: the old set_now_line_color(hex) silently ignored
+    its argument and re-read the repo. Confirm the round-trip we *do*
+    document — set repo, then refresh — actually paints the new color."""
+    repo = StubRepo({"now_line_color": "#FF0000"})
+    w = _make_widget(qapp, StubFacade(repo))
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(10, 30)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
+    w.refresh_now_line()
+    qapp.processEvents()
+    assert w._now_line is not None
+    assert "#FF0000" in w._now_line.styleSheet()
 
 
 # ---------- timer wiring ----------

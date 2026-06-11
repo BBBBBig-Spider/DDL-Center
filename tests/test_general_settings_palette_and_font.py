@@ -44,7 +44,7 @@ def test_each_palette_defines_all_color_keys():
     from app.gui import theme
 
     required = {
-        "PKU_RED", "PKU_RED_DARK", "PKU_RED_LIGHT", "PKU_GOLD",
+        "PRIMARY", "PRIMARY_DARK", "PRIMARY_LIGHT", "ACCENT",
         "INK", "TEXT", "MUTED", "BORDER", "SURFACE", "BACKGROUND",
     }
     for name, palette in theme.PALETTES.items():

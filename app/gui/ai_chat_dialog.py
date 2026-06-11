@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.gui.theme import BORDER, INK, PKU_RED, form_control_style, primary_button_style, secondary_button_style
+from app.gui.theme import BORDER, INK, PRIMARY, form_control_style, primary_button_style, secondary_button_style
 
 
 class AIChatDialog(QDialog):
@@ -111,7 +111,7 @@ class AIChatDialog(QDialog):
         self._append_assistant("已开始新对话。你可以重新描述当前任务、课程或计划需求。")
 
     def _append_user(self, text: str) -> None:
-        self.chat_view.append(f"<p><b style='color:{PKU_RED}'>你：</b>{self._escape(text)}</p>")
+        self.chat_view.append(f"<p><b style='color:{PRIMARY}'>你：</b>{self._escape(text)}</p>")
 
     def _append_assistant(self, text: str) -> None:
         self.chat_view.append(f"<p><b style='color:#7A4F00'>AI：</b>{self._escape(text)}</p>")
