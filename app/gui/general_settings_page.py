@@ -486,7 +486,7 @@ class GeneralSettingsPage(QWidget):
 
         self._display_name_input = QLineEdit()
         self._display_name_input.setMaxLength(DISPLAY_NAME_MAX_LEN)
-        self._display_name_input.setPlaceholderText("如：杨恩华（留空则显示学号）")
+        self._display_name_input.setPlaceholderText("如：大蜘蛛（留空则显示学号）")
         self._display_name_input.setMinimumWidth(220)
         row.addWidget(self._display_name_input, stretch=1)
 
