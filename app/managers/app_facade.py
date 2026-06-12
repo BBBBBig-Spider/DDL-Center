@@ -119,6 +119,27 @@ class AppFacade:
     def delete_schedule_slot(self, slot_id: int) -> None:
         self._require("schedule_manager").delete_slot(slot_id)
 
+    def clear_all_schedule_and_exams(self) -> dict:
+        """Used by the 'overwrite' import mode.
+
+        Deletes all schedule slots and exams, regardless of source (manual
+        or sync). Does NOT touch courses, tasks, or anything else — tasks
+        carry a course_id FK so dropping courses would orphan/break the
+        user's task list. Returns a small summary the UI can display.
+        """
+        summary = {"slots_deleted": 0, "exams_deleted": 0}
+        if self.schedule_manager is not None:
+            try:
+                summary["slots_deleted"] = self.schedule_manager.delete_all()
+            except Exception as exc:
+                print(f"[CLEAR] schedule delete failed: {exc}")
+        if self.exam_manager is not None:
+            try:
+                summary["exams_deleted"] = self.exam_manager.delete_all()
+            except Exception as exc:
+                print(f"[CLEAR] exam delete failed: {exc}")
+        return summary
+
     # ─── 提醒 ─────────────────────────────────────────────────
 
     def generate_alerts(self) -> list[Alert]:

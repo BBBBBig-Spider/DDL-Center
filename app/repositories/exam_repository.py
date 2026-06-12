@@ -256,6 +256,14 @@ class ExamRepository:
             cursor = conn.execute("DELETE FROM exams WHERE source = 'sync'")
         return cursor.rowcount
 
+    def delete_all(self) -> int:
+        """删除所有考试记录（不论 source）。返回被删除的行数。
+        覆盖式导入会调用本方法，把整张表清空后再写入新数据。"""
+        conn = self.db_manager.get_connection()
+        with conn:
+            cursor = conn.execute("DELETE FROM exams")
+        return cursor.rowcount
+
     # ─── 按 external_id 查 ────────────────────────────────────
 
     def find_by_external_id(self, external_id: str) -> Optional[Exam]:

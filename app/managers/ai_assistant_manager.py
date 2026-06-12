@@ -241,15 +241,27 @@ class AIAssistantManager:
             raise ValueError("AI 未能识别出任务标题")
         title = title.strip()
 
+        # ⚠️ Bug fix: when the input contains no deadline at all, the LLM is
+        # explicitly instructed to return ``due_time: null``. Treat that as the
+        # canonical "no deadline known" answer and propagate ``None`` upward —
+        # do NOT fabricate a default (e.g. today 23:59), because callers like
+        # ``SyncManager._ai_resolve_missing_due`` rely on ``None`` to drop the
+        # item instead of writing a placeholder task.
         due_raw = data.get("due_time")
-        if not isinstance(due_raw, str) or not due_raw.strip():
+        due_time: datetime | None
+        if due_raw is None or (isinstance(due_raw, str) and not due_raw.strip()):
+            due_time = None
+        elif isinstance(due_raw, datetime):
+            due_time = due_raw.replace(tzinfo=None) if due_raw.tzinfo is not None else due_raw
+        elif isinstance(due_raw, str):
+            try:
+                due_time = datetime.fromisoformat(due_raw.strip().replace("Z", ""))
+            except ValueError:
+                raise ValueError("AI 未能识别出截止时间")
+            if due_time.tzinfo is not None:
+                due_time = due_time.replace(tzinfo=None)
+        else:
             raise ValueError("AI 未能识别出截止时间")
-        try:
-            due_time = datetime.fromisoformat(due_raw.strip().replace("Z", ""))
-        except ValueError:
-            raise ValueError("AI 未能识别出截止时间")
-        if due_time.tzinfo is not None:
-            due_time = due_time.replace(tzinfo=None)
 
         description = data.get("description")
         if not isinstance(description, str):

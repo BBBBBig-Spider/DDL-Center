@@ -19,6 +19,8 @@ class AIBriefingPanel(QFrame):
     def __init__(self, facade=None, parent=None):
         super().__init__(parent)
         self.facade = facade
+        self._briefing_loaded = False
+        self._briefing_text = ""
         self.setObjectName("aiBriefingPanel")
         self._init_ui()
         self.refresh()
@@ -72,13 +74,19 @@ class AIBriefingPanel(QFrame):
             }}
             """
         )
-        self.refresh_button.clicked.connect(self.refresh)
+        self.refresh_button.clicked.connect(lambda: self.refresh(force_ai=True))
         layout.addWidget(self.refresh_button, alignment=Qt.AlignmentFlag.AlignTop)
 
-    def refresh(self) -> None:
+    def refresh(self, *_, force_ai: bool = False) -> None:
+        if self._briefing_loaded and not force_ai:
+            self.content_label.setText(self._briefing_text)
+            return
+
         text = self._load_ai_briefing()
         if not text:
             text = self._build_local_briefing()
+        self._briefing_loaded = True
+        self._briefing_text = text
         self.content_label.setText(text)
 
     def _load_ai_briefing(self) -> str:

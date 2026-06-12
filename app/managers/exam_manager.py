@@ -35,6 +35,10 @@ class ExamManager:
                 return existing.id
         return self.exam_repository.add(exam)
 
+    def delete_all(self) -> int:
+        """Delete every exam (manual + sync). Returns row count removed."""
+        return self.exam_repository.delete_all()
+
     def _dict_to_exam(self, data: dict) -> Exam:
         if not isinstance(data, dict):
             raise TypeError("data must be dict")

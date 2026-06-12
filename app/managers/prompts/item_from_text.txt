@@ -19,7 +19,15 @@
 
 task.payload（同原 task_from_text）：
 - title: string，任务标题，简洁(≤30字)
-- due_time: string，ISO-8601 本地时间，"YYYY-MM-DDTHH:MM"
+- due_time: string 或 null，ISO-8601 本地时间，"YYYY-MM-DDTHH:MM"
+  ⚠️ 关键：如果原文中没有任何截止时间线索（没有提到日期、没有
+  "截止" "due" "deadline" "by" "before" "submit by" 等关键词），
+  必须返回 null，绝对不要编造一个默认值（例如不要返回"今天 23:59"
+  或"下周五"）！返回 null 才是正确答案。
+  IMPORTANT: if the input contains NO date/deadline information at all,
+  you MUST return `due_time: null`. DO NOT fabricate a default like
+  "today 23:59" or "next Friday". Returning null is the correct answer
+  when no deadline is mentioned — the caller will handle it.
 - description: string，可空
 - estimated_hours: integer，不知道就给 2
 
@@ -61,6 +69,9 @@ exam.payload：
 
 输入：本周三晚上理科二号楼有讲座，欢迎参加
 输出：{{"type":"none","payload":{{}}}}
+
+输入：Homework 1 (for Units 1+2)
+输出：{{"type":"task","payload":{{"title":"Homework 1 (for Units 1+2)","due_time":null,"description":"","estimated_hours":2}}}}
 
 现在解析以下输入。今天是 {today}。
 输入：{raw_text}

@@ -74,6 +74,23 @@ _EXAM_WEEK_RE = re.compile(
     r"考试周[:：]?\s*(\d{4}-\d{1,2}-\d{1,2})\s*(?:至|到|-|~|—)\s*(\d{4}-\d{1,2}-\d{1,2})"
 )
 
+# "备注：..." trailers describe a *different* class (recitation / 习题课) with
+# its own day / week-parity / location. We split this off before parsing the
+# main lecture so that 双周/单周 markers inside the remark don't get mistaken
+# for the main lecture's week parity.
+_REMARK_SPLIT_RE = re.compile(r"\s*备注\s*[:：]")
+
+# Recitation-slot patterns. Kept module-level so they compile once.
+_RECITATION_PRESENT_RE = re.compile(r"习题课")
+_RECITATION_WEEKTYPE_RE = re.compile(r"(每周|单周|双周)")
+_RECITATION_WEEKDAY_RE = re.compile(r"周([一二三四五六日七天])")
+_RECITATION_PERIOD_RE = re.compile(r"(\d{1,2})\s*[~\-～—]\s*(\d{1,2})\s*节")
+_RECITATION_LOCATION_RE = re.compile(r"教室\s*[:：]\s*([^\s]+)")
+
+# Chinese weekday char -> grid weekday (Monday=1 ... Sunday=7); the portal
+# uses both 七 and 日/天 to mean Sunday.
+_CHINESE_WEEKDAY = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "日": 7, "七": 7, "天": 7}
+
 
 def parse_portal_html(html: str) -> list[dict]:
     """Return only the schedule-slot dicts (legacy contract used by older callers)."""
@@ -90,6 +107,11 @@ def parse_portal_import(html: str) -> dict:
     slots: list[dict] = []
     exams: list[dict] = []
     seen_exam_keys: set[tuple] = set()
+    # Recitations described in 备注 trailers repeat across every cell the
+    # main course occupies (a course meeting Wed periods 1+2 has two cells,
+    # both carrying the same 备注). Dedup on (title, weekday, period) so we
+    # emit the recitation once per real time slot, not N times.
+    seen_recitation_keys: set[tuple[str, int, int]] = set()
 
     for cell in soup.find_all(attrs={"id": _CELL_ID_RE}):
         match = _CELL_ID_RE.match(cell.get("id", ""))
@@ -115,6 +137,21 @@ def parse_portal_import(html: str) -> dict:
         if slot is not None:
             slots.append(slot)
 
+        # Pull recitation slots from the 备注 trailer. Reuse the main
+        # lecture's week range when present (the remark usually doesn't
+        # repeat "1-15周").
+        if slot is not None:
+            rec_start_week = slot["start_week"]
+            rec_end_week = slot["end_week"]
+        else:
+            rec_start_week, rec_end_week = _parse_week_range(_strip_remark(schedule_line))
+        for r_slot in _build_recitation_slots(title, schedule_line, rec_start_week, rec_end_week):
+            key = (r_slot["title"], r_slot["weekday"], r_slot["period"])
+            if key in seen_recitation_keys:
+                continue
+            seen_recitation_keys.add(key)
+            slots.append(r_slot)
+
         exam = _build_exam(title, exam_line)
         if exam is not None:
             # The same course shows up in many cells (one per period it
@@ -137,12 +174,19 @@ def _build_slot(title: str, weekday: int, period: int, info_line: str) -> Option
     if not 1 <= period <= len(_PERIOD_TIMES):
         return None
     start_time, end_time = _PERIOD_TIMES[period - 1]
-    start_week, end_week = _parse_week_range(info_line)
-    week_type = _parse_week_type(info_line)
-    location = _extract_schedule_location(info_line)
+    # The "备注：..." trailer often describes a *different* class (recitation /
+    # 习题课) with its own day / week-parity / location. Stripping it before
+    # parsing prevents 双周/单周 markers inside the remark from being
+    # misclassified as the main lecture's week parity. The remark itself is
+    # consumed separately by _build_recitation_slots() to emit a second slot.
+    info_main = _strip_remark(info_line)
+    start_week, end_week = _parse_week_range(info_main)
+    week_type = _parse_week_type(info_main)
+    location = _extract_schedule_location(info_main)
     return {
         "title": title,
         "weekday": weekday,
+        "period": period,
         "start_time": start_time,
         "end_time": end_time,
         "location": location,
@@ -150,7 +194,96 @@ def _build_slot(title: str, weekday: int, period: int, info_line: str) -> Option
         "start_week": start_week,
         "end_week": end_week,
         "week_type": week_type,
+        # Stable hash anchor: identical inputs always compute the same id, so
+        # repeating the import upserts the row instead of duplicating it.
+        "external_id": (
+            f"portal:{title}:wd={weekday}:p={period}:wt={week_type}"
+            f":w={start_week}-{end_week}"
+        ),
     }
+
+
+def _strip_remark(info_line: str) -> str:
+    """Return only the part before '备注：' — the main lecture's info."""
+    return _REMARK_SPLIT_RE.split(info_line, maxsplit=1)[0]
+
+
+def _extract_remark(info_line: str) -> str:
+    """Return only the part after '备注：' — the supplementary info, or ''."""
+    parts = _REMARK_SPLIT_RE.split(info_line, maxsplit=1)
+    return parts[1].strip() if len(parts) >= 2 else ""
+
+
+def _build_recitation_slots(
+    title: str,
+    info_line: str,
+    main_start_week: int,
+    main_end_week: int,
+) -> list[dict]:
+    """Parse '备注：习题课X周Y10-11节，教室：Z' into one or more slots.
+
+    Returns [] when no recitation marker is present, or when the format isn't
+    recognized — recitations are best-effort and should never crash the main
+    parse. Each occupied period becomes its own slot so the schedule grid
+    renders them as adjacent rows, mirroring how lectures are emitted.
+    """
+    remark = _extract_remark(info_line)
+    if not remark or not _RECITATION_PRESENT_RE.search(remark):
+        return []
+
+    week_type_match = _RECITATION_WEEKTYPE_RE.search(remark)
+    week_type = {"每周": "all", "单周": "odd", "双周": "even"}.get(
+        week_type_match.group(1) if week_type_match else "", "all"
+    )
+
+    weekday_match = _RECITATION_WEEKDAY_RE.search(remark)
+    if not weekday_match:
+        return []
+    weekday = _CHINESE_WEEKDAY.get(weekday_match.group(1))
+    if weekday is None:
+        return []
+
+    period_match = _RECITATION_PERIOD_RE.search(remark)
+    if not period_match:
+        return []
+    period_start = int(period_match.group(1))
+    period_end = int(period_match.group(2))
+    if not (1 <= period_start <= period_end <= len(_PERIOD_TIMES)):
+        return []
+
+    # Location: the remark often lists multiple rooms separated by 、
+    # ("三教208、二教315、二教317") — pick the first as the canonical room.
+    location_match = _RECITATION_LOCATION_RE.search(remark)
+    if location_match:
+        location_raw = location_match.group(1)
+    else:
+        # No 教室 label — sometimes the remark just says "10-11节" with no
+        # room specified. Leave empty rather than guess.
+        location_raw = ""
+    location = location_raw.split("、")[0].strip(" ,，") if location_raw else ""
+
+    slots = []
+    for p in range(period_start, period_end + 1):
+        st, et = _PERIOD_TIMES[p - 1]
+        rec_title = f"{title} 习题课"
+        slots.append({
+            "title": rec_title,
+            "weekday": weekday,
+            "period": p,
+            "start_time": st,
+            "end_time": et,
+            "start_week": main_start_week,
+            "end_week": main_end_week,
+            "week_type": week_type,
+            "location": location,
+            "slot_type": "lecture",
+            "is_recitation": True,
+            "external_id": (
+                f"portal:{rec_title}:wd={weekday}:p={p}:wt={week_type}"
+                f":w={main_start_week}-{main_end_week}"
+            ),
+        })
+    return slots
 
 
 def _build_exam(title: str, exam_line: str) -> Optional[dict]:

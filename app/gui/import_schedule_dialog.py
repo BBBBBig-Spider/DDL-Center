@@ -6,12 +6,14 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QTextEdit,
     QVBoxLayout,
 )
@@ -83,6 +85,27 @@ class ImportScheduleDialog(QDialog):
         )
         layout.addWidget(self.text_edit, stretch=1)
 
+        # Import mode: overwrite (default) clears existing schedule + exam
+        # rows before importing; merge upserts on external_id only. Default
+        # to overwrite so a user re-running the import doesn't end up with
+        # stale slots from a previous semester sitting alongside the new ones.
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(12)
+        mode_label = QLabel("导入方式：")
+        mode_label.setStyleSheet(f"color: {INK}; font-weight: 700;")
+        mode_row.addWidget(mode_label)
+
+        self.mode_group = QButtonGroup(self)
+        self.overwrite_radio = QRadioButton("覆盖（清空原有课表与考试，再导入）")
+        self.merge_radio = QRadioButton("合并（保留原有，新条目按 external_id 去重更新）")
+        self.overwrite_radio.setChecked(True)
+        self.mode_group.addButton(self.overwrite_radio)
+        self.mode_group.addButton(self.merge_radio)
+        mode_row.addWidget(self.overwrite_radio)
+        mode_row.addWidget(self.merge_radio)
+        mode_row.addStretch()
+        layout.addLayout(mode_row)
+
         file_row = QHBoxLayout()
         load_btn = QPushButton("从文件加载")
         load_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -134,6 +157,18 @@ class ImportScheduleDialog(QDialog):
         parsed = self._parse_html(raw) if raw.lstrip().startswith("<") else self._parse_json(raw)
         if parsed is None:
             return
+
+        # Overwrite mode wipes the existing schedule + exam tables first so
+        # the import lands on a clean slate. Merge mode skips this — upsert
+        # on external_id (handled in the manager layer) keeps it idempotent.
+        if self.overwrite_radio.isChecked():
+            if hasattr(self.facade, "clear_all_schedule_and_exams"):
+                try:
+                    counts = self.facade.clear_all_schedule_and_exams()
+                    print(f"[IMPORT] overwrite cleared: {counts}")
+                except Exception as exc:
+                    QMessageBox.critical(self, "清空失败", str(exc))
+                    return
 
         ok, exam_ok, errors = self._import_parsed(parsed)
         msg = f"成功导入 {ok} 条课表记录。"

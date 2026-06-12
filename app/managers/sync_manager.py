@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from datetime import datetime
 from typing import Any
 
@@ -15,6 +16,33 @@ from app.models.sync_result import SyncResult
 from app.models.task import Task
 from app.network.network_errors import NetworkError, SyncError
 from app.parsers._common import coerce_str
+
+
+# Folder navigation items show up as plain <li> entries on the assignment
+# list page (e.g. when a course splits its homework into sub-folders named
+# "作业", "Labs", "Homework"). They have no due date and an extremely short
+# title — drop them BEFORE wasting an AI call.
+_FOLDER_TITLE_RE = re.compile(
+    r"^\s*(作业|labs?|homeworks?|测验|quizzes?|exams?|"
+    r"assignments?|作业列表|tutorials?|hand-?outs?|materials?|"
+    r"资料|讲义|讲义资料|参考资料)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_folder(item: dict) -> bool:
+    """Return True for entries that look like a navigation folder, not a task.
+
+    A real assignment title is typically longer than 12 chars and/or contains
+    a number, parenthesis, or punctuation. A bare folder name like '作业',
+    'Labs', 'Homework' is short and matches one of the well-known nav words.
+    """
+    title = (item.get("title") or "").strip()
+    if not title:
+        return False
+    if len(title) > 12:
+        return False
+    return bool(_FOLDER_TITLE_RE.match(title))
 
 
 class SyncManager:
@@ -105,22 +133,37 @@ class SyncManager:
 
     def _process_assignment_items(self, items: list[dict], result: SyncResult) -> None:
         now = datetime.now()
+        # Diagnostic counters: per-bucket tallies + a per-item path log. Helps
+        # the user (and us) figure out why a task did or didn't show up.
+        print(f"[SYNC] processing {len(items)} assignment items")
         for item in items:
+            # Folder navigation entries (titles like '作业' / 'Labs') are not
+            # tasks — they're sub-pages on the assignment list. Filter them
+            # before they reach the no-due AI path that would otherwise have
+            # the LLM fabricate a deadline.
+            if _looks_like_folder(item):
+                print(f"[SYNC]   skip folder-like li: {(item.get('title') or '?')[:30]!r}")
+                continue
             # Each item is wrapped so a single bad payload can't abort the
             # entire batch. We surface the failure on ``result.errors`` with
             # enough identifier to track it down. See REVIEW.md severe #5.
             try:
                 due = item.get("due_time")
+                title_short = (item.get("title") or "?")[:30]
                 if due is not None and due < now:
+                    print(f"[SYNC]   drop overdue: {title_short!r} due={due}")
                     result.tasks_dropped_overdue += 1
                     continue
                 if due is None:
+                    print(f"[SYNC]   no due → AI fallback: {title_short!r}")
                     self._ai_resolve_missing_due(item, result, now)
                     continue
+                print(f"[SYNC]   write: {title_short!r} due={due}")
                 self._upsert_sync_task(item, due, result, now)
             except Exception as exc:
                 ext_id = item.get("external_id") or item.get("title") or "?"
                 result.errors.append(f"task {ext_id}: {exc}")
+                print(f"[SYNC]   ERROR on {ext_id!r}: {exc}")
                 continue
 
         try:
@@ -220,12 +263,16 @@ class SyncManager:
             return
 
         if parsed.get("type") != "task":
+            print(f"[SYNC][AI]   classify as {parsed.get('type')!r} (not task) → drop")
             result.ai_drop_non_task += 1
             return
 
         payload = parsed.get("payload") or {}
         due_time = self._coerce_datetime(payload.get("due_time"))
+        ai_title = payload.get("title") or item.get("title") or "?"
+        print(f"[SYNC][AI]   AI returned: title={ai_title!r} due={due_time}")
         if due_time is None or due_time < now:
+            print(f"[SYNC][AI]   drop (no due / overdue)")
             result.ai_drop_overdue += 1
             return
 
