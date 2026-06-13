@@ -170,7 +170,7 @@ def test_palette_apply_persists(qapp, tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     page = GeneralSettingsPage(_StubFacade())
-    page._apply_palette("dark")
+    assert page._apply_palette("dark") is True
     assert theme._read_active_palette_name() == "dark"
 
 
@@ -181,7 +181,7 @@ def test_palette_apply_unknown_is_noop(qapp, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     theme._persist_palette_name("ocean_blue")
     page = GeneralSettingsPage(_StubFacade())
-    page._apply_palette("bogus-palette")
+    assert page._apply_palette("bogus-palette") is False
     assert theme._read_active_palette_name() == "ocean_blue"
 
 
@@ -193,3 +193,46 @@ def test_palette_combo_loads_active(qapp, tmp_path, monkeypatch):
     theme._persist_palette_name("dark")
     page = GeneralSettingsPage(_StubFacade())
     assert page._palette_combo.currentData() == "dark"
+
+
+def test_palette_apply_button_restarts_after_persist(qapp, tmp_path, monkeypatch):
+    from app.gui import theme
+    from app.gui.general_settings_page import GeneralSettingsPage
+
+    monkeypatch.chdir(tmp_path)
+    page = GeneralSettingsPage(_StubFacade())
+    restarted = []
+    monkeypatch.setattr(page, "_restart_application", lambda: restarted.append(True))
+
+    idx = page._palette_combo.findData("ocean_blue")
+    page._palette_combo.setCurrentIndex(idx)
+    page._on_apply_palette_clicked()
+
+    assert theme._read_active_palette_name() == "ocean_blue"
+    assert restarted == [True]
+
+
+def test_restart_application_spawns_new_process_and_quits(qapp, monkeypatch):
+    import sys
+    from app.gui import general_settings_page as module
+    from app.gui.general_settings_page import GeneralSettingsPage
+
+    page = GeneralSettingsPage(_StubFacade())
+    spawned = []
+    quit_called = []
+
+    class FakeApp:
+        def quit(self):
+            quit_called.append(True)
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "Popen",
+        lambda args, close_fds=True: spawned.append((args, close_fds)),
+    )
+    monkeypatch.setattr(module.QApplication, "instance", staticmethod(lambda: FakeApp()))
+
+    page._restart_application()
+
+    assert spawned == [([sys.executable, "-m", "app.main"], True)]
+    assert quit_called == [True]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QRect, Qt, Signal
@@ -367,18 +369,32 @@ class GeneralSettingsPage(QWidget):
         chosen = self._palette_combo.currentData()
         if not isinstance(chosen, str):
             return
-        self._apply_palette(chosen)
-        QMessageBox.information(
-            self, "重启生效", "主题已切换，重启应用后生效。"
-        )
+        if self._apply_palette(chosen):
+            self._restart_application()
 
-    def _apply_palette(self, name: str) -> None:
+    def _apply_palette(self, name: str) -> bool:
         """Persist the palette name. Takes effect after restart — theme
         constants are bound at module import time."""
         if name not in PALETTES:
-            return
+            return False
         _persist_palette_name(name)
-        self._palette_pending_label.setText("（待重启）")
+        self._palette_pending_label.setText("正在重启…")
+        return True
+
+    def _restart_application(self) -> None:
+        app = QApplication.instance()
+        try:
+            subprocess.Popen([sys.executable, "-m", "app.main"], close_fds=True)
+        except Exception as exc:
+            self._palette_pending_label.setText("（重启失败）")
+            QMessageBox.critical(
+                self,
+                "重启失败",
+                f"主题已保存，但自动重启失败，请手动重启应用。\n\n{exc}",
+            )
+            return
+        if app is not None:
+            app.quit()
 
     # ─── Font scale logic ───────────────────────────────────
     def _get_font_scale(self) -> float:
