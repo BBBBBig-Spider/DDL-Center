@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QVBoxLayout, QHBoxLayout, QWidget
 
 from app.gui.task_list_widget import TaskCardWidget
-from app.gui.theme import INK, PKU_GOLD, PKU_RED, TEXT
+from app.gui.theme import INK, ACCENT, PRIMARY, TEXT
 from app.gui._helpers import get_field
 
 
@@ -110,8 +110,8 @@ class TimelineWidget(QWidget):
         tasks = self._load_tasks(filters)
         today, tomorrow, this_week, future = self._group_tasks(tasks)
 
-        self.timeline_layout.addWidget(TimelineSectionWidget("今天", PKU_RED, today, self))
-        self.timeline_layout.addWidget(TimelineSectionWidget("明天", PKU_GOLD, tomorrow, self))
+        self.timeline_layout.addWidget(TimelineSectionWidget("今天", PRIMARY, today, self))
+        self.timeline_layout.addWidget(TimelineSectionWidget("明天", ACCENT, tomorrow, self))
         self.timeline_layout.addWidget(TimelineSectionWidget("本周", "#6B7D3A", this_week, self))
         self.timeline_layout.addWidget(TimelineSectionWidget("更晚", "#9CA3AF", future, self))
         self.timeline_layout.addStretch()

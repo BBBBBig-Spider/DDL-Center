@@ -11,7 +11,7 @@ from app.gui.statistics_window import StatisticsWindow
 from app.gui.task_list_widget import TaskListWidget
 from app.gui.contact_page import ContactPage
 from app.gui.general_settings_page import GeneralSettingsPage
-from app.gui.theme import BACKGROUND, BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, primary_button_style
+from app.gui.theme import BACKGROUND, BORDER, INK, ACCENT, PRIMARY, PRIMARY_DARK, primary_button_style
 from app.gui.widgets.ai_briefing_panel import AIBriefingPanel
 from app.gui.widgets.ai_chat_panel import AIChatPanel
 from app.services import credentials_store
@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
         sidebar.setStyleSheet(
             f"""
             QFrame#sidebar {{
-                background-color: {PKU_RED_DARK};
+                background-color: {PRIMARY_DARK};
                 border: none;
             }}
             QLabel {{
@@ -104,11 +104,11 @@ class MainWindow(QMainWindow):
                 font-size: 14px;
             }}
             QPushButton:hover {{
-                background-color: {PKU_RED};
+                background-color: {PRIMARY};
                 color: #FFFFFF;
             }}
             QPushButton[active="true"] {{
-                background-color: {PKU_GOLD};
+                background-color: {ACCENT};
                 color: #FFFFFF;
                 font-weight: 700;
             }}
@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
         self.nav_buttons["schedule"] = QPushButton("课程表")
         self.nav_buttons["statistics"] = QPushButton("进度统计")
         self.nav_buttons["ai"] = QPushButton("AI 助手")
-        self.nav_buttons["general_settings"] = QPushButton("⚙ 通用设置")
+        self.nav_buttons["general_settings"] = QPushButton("通用设置")
         self.nav_buttons["contact"] = QPushButton("联系作者")
 
         for button in self.nav_buttons.values():
@@ -161,7 +161,7 @@ class MainWindow(QMainWindow):
                 text-align: center;
             }}
             QFrame#LoginCard QPushButton:hover {{
-                background-color: {PKU_RED};
+                background-color: {PRIMARY};
             }}
             """
         )
@@ -209,12 +209,21 @@ class MainWindow(QMainWindow):
         self.open_settings_button.clicked.connect(self._open_settings)
         self.open_ai_create_button.clicked.connect(self._open_ai_create_dialog)
         # Live-update the schedule's "current time" line color when the user
-        # changes it in General Settings.
+        # changes it in General Settings. The color itself is persisted via
+        # setting_repository — this signal just nudges the widget to
+        # re-render immediately rather than waiting for its 5-min timer.
         if hasattr(self.general_settings_page, "now_line_color_changed") and hasattr(
-            self.schedule_page, "set_now_line_color"
+            self.schedule_page, "refresh_now_line"
         ):
             self.general_settings_page.now_line_color_changed.connect(
-                self.schedule_page.set_now_line_color
+                self.schedule_page.refresh_now_line
+            )
+        # Refresh the login card avatar when the user changes it in settings.
+        if hasattr(self.general_settings_page, "avatar_changed"):
+            self.general_settings_page.avatar_changed.connect(self._on_avatar_changed)
+        if hasattr(self.general_settings_page, "display_name_changed"):
+            self.general_settings_page.display_name_changed.connect(
+                lambda _name: self._refresh_login_status()
             )
 
     def _switch_page(self, page_key: str) -> None:
@@ -267,7 +276,18 @@ class MainWindow(QMainWindow):
 
         username, _ = credentials_store.load()
         if username:
-            label = QLabel(f"👤 {username}")
+            display = self._get_display_name() or username
+            avatar_path = self._get_avatar_path()
+            if avatar_path:
+                from app.gui.general_settings_page import _make_circular_pixmap
+                avatar_label = QLabel()
+                avatar_label.setFixedSize(24, 24)
+                avatar_label.setStyleSheet("background: transparent;")
+                avatar_label.setPixmap(_make_circular_pixmap(avatar_path, 24))
+                self.login_card_layout.addWidget(avatar_label)
+                label = QLabel(display)
+            else:
+                label = QLabel(f"👤 {display}")
             label.setStyleSheet("color: #FFFFFF; font-size: 12px; font-weight: 600;")
             self.login_card_layout.addWidget(label)
             logout_btn = QPushButton("退出登录")
@@ -282,6 +302,39 @@ class MainWindow(QMainWindow):
             login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             login_btn.clicked.connect(self._handle_login)
             self.login_card_layout.addWidget(login_btn)
+
+    def _get_display_name(self) -> str:
+        """Read the user-set display name (preferred over the bare username)."""
+        repo = getattr(self.facade, "setting_repository", None)
+        if repo is None:
+            return ""
+        try:
+            value = repo.get("display_name", "")
+        except Exception:
+            return ""
+        return value.strip() if isinstance(value, str) else ""
+
+    def _get_avatar_path(self) -> str | None:
+        """Read the persisted avatar path from setting_repository if any.
+
+        Returns ``None`` when no path is set or the file no longer exists, so
+        the login card falls back to the default emoji."""
+        repo = getattr(self.facade, "setting_repository", None)
+        if repo is None:
+            return None
+        try:
+            value = repo.get("avatar_path", None)
+        except Exception:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            return None
+        from pathlib import Path
+        if not Path(value).is_file():
+            return None
+        return value
+
+    def _on_avatar_changed(self, _path: str) -> None:
+        self._refresh_login_status()
 
     def _handle_login(self) -> None:
         from app.gui.login_dialog import LoginDialog
@@ -300,31 +353,43 @@ class MainWindow(QMainWindow):
     def _handle_logout(self) -> None:
         reply = QMessageBox.question(
             self,
-            "退出登录",
-            "退出登录将删除本地所有同步的任务、考试和 AI 公告复审缓存。\n\n确定继续？",
+            "退出登录并清除本地数据",
+            "退出登录会清空所有本地数据，包括：\n"
+            "  • 全部任务（手动添加的也会清）\n"
+            "  • 全部课程、课表、考试\n"
+            "  • 头像、显示名、主题、字号等所有偏好\n"
+            "  • 保存的登录凭据\n\n"
+            "唯一保留：DeepSeek API Key（系统密钥库）\n\n"
+            "完成后应用会自动重启。确定继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            counts = self.facade.logout_and_clear_sync_data()
+            self.facade.logout_and_reset_local_state()
         except Exception as exc:
             QMessageBox.critical(self, "退出失败", str(exc))
             return
+
+        # The facade's repositories are now stale (DB deleted). The cleanest
+        # recovery is a process restart. We tell the user we're restarting,
+        # spawn a fresh process, then exit this one.
         QMessageBox.information(
             self,
-            "已退出登录",
-            (
-                f"已删除 {counts.get('tasks_deleted', 0)} 条同步任务、"
-                f"{counts.get('exams_deleted', 0)} 条同步考试、"
-                f"{counts.get('reviews_deleted', 0)} 条 AI 复审缓存。"
-            ),
+            "已清除本地数据",
+            "本地数据已全部清空。点击确定后应用将重启。",
         )
-        self._refresh_login_status()
-        if hasattr(self.task_list_page, "refresh_display"):
-            self.task_list_page.refresh_display()
-        if hasattr(self.briefing_panel, "refresh"):
-            self.briefing_panel.refresh()
+
+        import subprocess
+
+        # Re-launch the same Python entrypoint (`python -m app.main`).
+        try:
+            subprocess.Popen([sys.executable, "-m", "app.main"], close_fds=True)
+        except Exception as exc:
+            QMessageBox.critical(self, "重启失败",
+                                 f"请手动重启应用。\n\n{exc}")
+        QApplication.quit()
 
 
 if __name__ == "__main__":

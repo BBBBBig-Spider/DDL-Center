@@ -88,23 +88,60 @@ def test_invalid_stored_color_falls_back_to_default(qapp):
 # ---------- visibility logic ----------
 
 
-def test_now_line_hidden_when_outside_class_hours(qapp, monkeypatch):
-    w = _make_widget(qapp)
-    # PERIODS first start ≈ 08:00 — pin "now" to 03:00 (well before).
-    fake_now = datetime.combine(date.today(), time(3, 0))
-
+def _patch_now(monkeypatch, fake_now):
     class _FakeDatetime:
         @staticmethod
         def now():
             return fake_now
-
     monkeypatch.setattr("app.gui.schedule_widget.datetime", _FakeDatetime)
+
+
+def test_now_line_visible_after_last_period(qapp, monkeypatch):
+    """At 21:31 — past the last period (ends 21:30) — the line should still
+    render, clamped to the bottom of the grid. Mirrors how DDL red lines
+    handle late-night deadlines like 23:59."""
+    w = _make_widget(qapp)
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(21, 31)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
     w._update_now_line()
-    # After update with out-of-range time → indicator is hidden (or never created).
-    if w._now_line is not None:
-        assert not w._now_line.isVisible()
-    if w._now_label is not None:
-        assert not w._now_label.isVisible()
+    assert w._now_line is not None
+    assert w._now_line.isVisible()
+
+
+def test_now_line_visible_before_first_period(qapp, monkeypatch):
+    """At 03:00 — before the first period starts — the line should still
+    render, clamped to the top of the grid."""
+    w = _make_widget(qapp)
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(3, 0)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
+    w._update_now_line()
+    assert w._now_line is not None
+    assert w._now_line.isVisible()
+
+
+def test_now_line_renders_when_week_has_zero_tasks(qapp, monkeypatch):
+    """Regression: when the current week has no tasks, _redraw_ddl_lines
+    used to early-return before activating the grid layout. The now-line
+    relies on that activation to compute cellRect, so it would never appear.
+    With the fix, the now-line should still render even at 21:31 (past the
+    last period) on a task-free week."""
+    w = _make_widget(qapp)
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(21, 31)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
+    # Trigger the full render pipeline (no tasks → previously returned early).
+    w._redraw_ddl_lines()
+    qapp.processEvents()
+    assert w._now_line is not None
+    assert w._now_line.isVisible()
 
 
 def test_now_line_hidden_when_not_current_week(qapp):
@@ -120,17 +157,36 @@ def test_now_line_hidden_when_not_current_week(qapp):
 # ---------- live color update ----------
 
 
-def test_set_now_line_color_accepts_valid_hex(qapp):
+def test_refresh_now_line_does_not_crash(qapp):
     w = _make_widget(qapp)
-    # Should not raise on a valid hex.
-    w.set_now_line_color("#FF8800")
+    # Should not raise, regardless of any payload the signal carries.
+    w.refresh_now_line("#FF8800")
 
 
-def test_set_now_line_color_ignores_garbage(qapp):
+def test_refresh_now_line_ignores_garbage(qapp):
     w = _make_widget(qapp)
-    # Should not raise on bogus input.
-    w.set_now_line_color("garbage")
-    w.set_now_line_color(None)  # type: ignore[arg-type]
+    # Should not raise on bogus payloads either — the method ignores its
+    # arguments entirely (the real source of truth is setting_repository).
+    w.refresh_now_line("garbage")
+    w.refresh_now_line(None)
+    w.refresh_now_line()
+
+
+def test_refresh_now_line_picks_up_new_color_from_repo(qapp, monkeypatch):
+    """Bug #3 regression: the old set_now_line_color(hex) silently ignored
+    its argument and re-read the repo. Confirm the round-trip we *do*
+    document — set repo, then refresh — actually paints the new color."""
+    repo = StubRepo({"now_line_color": "#FF0000"})
+    w = _make_widget(qapp, StubFacade(repo))
+    w.current_week = w._current_semester_week()
+    _patch_now(monkeypatch, datetime.combine(date.today(), time(10, 30)))
+    w.show()
+    w.resize(900, 700)
+    qapp.processEvents()
+    w.refresh_now_line()
+    qapp.processEvents()
+    assert w._now_line is not None
+    assert "#FF0000" in w._now_line.styleSheet()
 
 
 # ---------- timer wiring ----------

@@ -23,7 +23,6 @@
 - [🕷️ DDL Command Center 🕷️](#️-ddl-command-center-️)
   - [📑 Table of Contents](#-table-of-contents)
   - [✨ Features](#-features)
-  - [📸 Screenshots](#-screenshots)
   - [🚀 Quick Start](#-quick-start)
   - [⚙️ Configuration](#️-configuration)
   - [📥 课表导入](#-课表导入)
@@ -48,17 +47,16 @@
 - **AI 聊天** — 内嵌 DeepSeek 助手，自动携带本地 task 上下文
 - **通用设置** — 主题色、当前时间线颜色等可配置项，持久化到本地
 
----
-
-## 📸 Screenshots
-
-> _占位中。建议补 3 张截图到 `docs/screenshots/`，文件名与下表一致即可自动渲染。_
-
-| 任务管理 | 课程表 | AI 助手 |
-|---|---|---|
-| ![tasks](docs/screenshots/tasks.png) | ![schedule](docs/screenshots/schedule.png) | ![ai](docs/screenshots/ai.png) |
+**演示视频**
+[网盘链接](https://disk.pku.edu.cn/link/AA2CCDBDCF34C94F7BBE38B1279D386D28)
+```
+文件名：202606070152.mp4
+有效期限：2107-08-05 00:00
+提取码：spider
+```
 
 ---
+
 
 ## 🚀 Quick Start
 
@@ -78,6 +76,12 @@ python -m app.main
 ```
 
 首次启动会在 `data/ddl_center.db` 自动建库。
+
+> **贡献者请额外执行一次**：
+> ```bash
+> git config core.hooksPath .githooks
+> ```
+> 这会启用本地 pre-commit 钩子，自动拦截把头像 / 主题 / 同步缓存等**本地用户状态**误 push 到云端的行为。
 
 ---
 

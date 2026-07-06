@@ -13,11 +13,30 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.gui.theme import BORDER, INK, MUTED, PKU_GOLD, PKU_RED, PKU_RED_LIGHT, TEXT, secondary_button_style
+from app.gui.theme import BORDER, INK, MUTED, ACCENT, PRIMARY, PRIMARY_LIGHT, TEXT, secondary_button_style
 
 try:
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
+
+    def _install_chinese_font() -> None:
+        """Pick the first available CJK-capable font in the system so matplotlib
+        no longer emits 'Glyph XXX missing from font' warnings on Chinese labels."""
+        import matplotlib
+        import matplotlib.font_manager as fm
+        candidates = ["Microsoft YaHei", "SimHei", "PingFang SC",
+                      "Noto Sans CJK SC", "WenQuanYi Zen Hei", "Arial Unicode MS"]
+        available = {f.name for f in fm.fontManager.ttflist}
+        chosen = next((c for c in candidates if c in available), None)
+        if chosen:
+            existing = matplotlib.rcParams.get("font.sans-serif", [])
+            # Prepend the chosen font so it wins over DejaVu Sans.
+            matplotlib.rcParams["font.sans-serif"] = [chosen] + [
+                f for f in existing if f != chosen
+            ]
+            matplotlib.rcParams["axes.unicode_minus"] = False
+
+    _install_chinese_font()
 except Exception:
     FigureCanvas = None
     Figure = None
@@ -27,7 +46,7 @@ from app.gui._helpers import get_field
 
 
 class MetricCard(QFrame):
-    def __init__(self, title: str, value: str, hint: str = "", accent: str = PKU_RED, parent=None):
+    def __init__(self, title: str, value: str, hint: str = "", accent: str = PRIMARY, parent=None):
         super().__init__(parent)
         self.setObjectName("metricCard")
         self.setStyleSheet(
@@ -125,7 +144,7 @@ class StatisticsWindow(QWidget):
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet(
-            f"background-color: {PKU_RED_LIGHT}; color: {TEXT}; border: 1px solid #E7B8B8; "
+            f"background-color: {PRIMARY_LIGHT}; color: {TEXT}; border: 1px solid #E7B8B8; "
             "border-radius: 6px; padding: 10px; font-size: 12px;"
         )
         self.main_layout.addWidget(self.status_label)
@@ -220,10 +239,10 @@ class StatisticsWindow(QWidget):
     def _render_metrics(self, stats: dict) -> None:
         self._clear_layout(self.metrics_grid)
         cards = [
-            MetricCard("总任务", str(stats["total"]), "当前任务池", PKU_RED),
+            MetricCard("总任务", str(stats["total"]), "当前任务池", PRIMARY),
             MetricCard("已完成", str(stats["done"]), f"完成率 {stats['completion_rate']:.0%}", "#6B7D3A"),
-            MetricCard("未完成", str(stats["active"]), "仍需处理", PKU_GOLD),
-            MetricCard("紧急 / 逾期", f"{stats['urgent']} / {stats['overdue']}", "24 小时内 / 已逾期", PKU_RED),
+            MetricCard("未完成", str(stats["active"]), "仍需处理", ACCENT),
+            MetricCard("紧急 / 逾期", f"{stats['urgent']} / {stats['overdue']}", "24 小时内 / 已逾期", PRIMARY),
         ]
         for index, card in enumerate(cards):
             self.metrics_grid.addWidget(card, 0, index)
@@ -260,7 +279,7 @@ class StatisticsWindow(QWidget):
         figure = Figure(figsize=(6, 2.8), tight_layout=True, facecolor="#FFFFFF")
         axis = figure.add_subplot(111)
         axis.set_facecolor("#FFFFFF")
-        axis.bar(labels, values, color=PKU_RED, width=0.52)
+        axis.bar(labels, values, color=PRIMARY, width=0.52)
         axis.set_ylim(0, max_value + 1)
         axis.set_ylabel("DDL 数量", color=TEXT)
         axis.tick_params(axis="x", colors=TEXT, labelsize=9)

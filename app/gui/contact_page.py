@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.gui.theme import BORDER, INK, PKU_RED, PKU_RED_LIGHT, TEXT
+from app.gui.theme import BORDER, INK, PRIMARY, PRIMARY_LIGHT, TEXT
 
 
 _QR_PATH = Path(__file__).resolve().parent / "assets" / "donate_qrcode.jpg"
@@ -50,7 +50,7 @@ class ContactPage(QWidget):
         heading = QLabel("请作者吃根鸭腿")
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         heading.setStyleSheet(
-            f"font-size: 16px; font-weight: 700; color: {PKU_RED}; "
+            f"font-size: 16px; font-weight: 700; color: {PRIMARY}; "
             "background: transparent;"
         )
         layout.addWidget(heading)
@@ -92,7 +92,7 @@ class ContactPage(QWidget):
         heading = QLabel("联系作者")
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         heading.setStyleSheet(
-            f"font-size: 16px; font-weight: 700; color: {PKU_RED}; "
+            f"font-size: 16px; font-weight: 700; color: {PRIMARY}; "
             "background: transparent;"
         )
         layout.addWidget(heading)
@@ -122,8 +122,8 @@ class ContactPage(QWidget):
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         email_value.setStyleSheet(
-            f"font-size: 15px; font-weight: 600; color: {PKU_RED}; "
-            f"background: {PKU_RED_LIGHT}; padding: 8px 12px; "
+            f"font-size: 15px; font-weight: 600; color: {PRIMARY}; "
+            f"background: {PRIMARY_LIGHT}; padding: 8px 12px; "
             f"border: 1px solid {BORDER}; border-radius: 6px;"
         )
         layout.addWidget(email_value)

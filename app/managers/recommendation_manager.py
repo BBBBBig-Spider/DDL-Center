@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 from app.config import SEMESTER_START
 from app.models.schedule_slot import ScheduleSlot
+from app.utils.semester import compute_current_week
 
 
 class RecommendationManager:
@@ -33,7 +34,9 @@ class RecommendationManager:
         if due_date < first_allowed_date:
             return []
 
-        current_week = max(1, (today - SEMESTER_START).days // 7 + 1) if today >= SEMESTER_START else 1
+        current_week = compute_current_week(
+            getattr(self.task_manager, "setting_repository", None)
+        )
         week = max(week, current_week)
 
         weekday_order = list(range(1, 8))

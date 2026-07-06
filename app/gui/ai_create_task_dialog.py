@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (
 from app.gui.theme import (
     BORDER,
     INK,
-    PKU_GOLD,
-    PKU_RED,
+    ACCENT,
+    PRIMARY,
     form_control_style,
     primary_button_style,
     secondary_button_style,
@@ -121,7 +121,7 @@ class AICreateDialog(QDialog):
 
         self.type_chip = QLabel("📝 任务")
         self.type_chip.setStyleSheet(
-            f"background-color: {PKU_GOLD}; color: white; padding: 2px 10px; "
+            f"background-color: {ACCENT}; color: white; padding: 2px 10px; "
             f"border-radius: 10px; font-size: 12px; font-weight: 600;"
         )
         header_row.addWidget(self.type_chip)

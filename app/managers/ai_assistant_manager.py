@@ -8,10 +8,11 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
-from app.config import AI_DAILY_TOKEN_LIMIT, SEMESTER_START
+from app.config import AI_DAILY_TOKEN_LIMIT, DEEPSEEK_MODEL, SEMESTER_START
 from app.network.key_store import KeyStore
 from app.network.llm_client import LLMClient
 from app.network.network_errors import NetworkError
+from app.utils.semester import compute_current_week
 
 
 class AIQuotaExceededError(RuntimeError):
@@ -36,6 +37,7 @@ class AIAssistantManager:
         course_manager=None,
         key_store: KeyStore | None = None,
         llm_client_factory=LLMClient,
+        model: str | None = None,
     ) -> None:
         self.task_manager = task_manager
         self.alert_manager = alert_manager
@@ -45,10 +47,36 @@ class AIAssistantManager:
         self.course_manager = course_manager
         self.key_store = key_store or KeyStore(setting_repository)
         self.llm_client_factory = llm_client_factory
+        # Resolve initial model: explicit arg > stored setting > env default.
+        resolved_model = model
+        if resolved_model is None and setting_repository is not None:
+            try:
+                stored = setting_repository.get("deepseek_model", None)
+                if isinstance(stored, str) and stored.strip():
+                    resolved_model = stored.strip()
+            except Exception:
+                resolved_model = None
+        if resolved_model is None:
+            resolved_model = DEEPSEEK_MODEL
+        self.model = resolved_model
         self._conversation_seq = 0
         self._conversations: dict[int, list[dict[str, str]]] = {}
         self._summary_cache: dict[str, tuple[datetime, str]] = {}
         self._memory_token_usage: dict[str, int] = {}
+
+    def set_model(self, model: str) -> None:
+        """Change the model used for subsequent LLM calls and persist it."""
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("model name cannot be empty")
+        self.model = model.strip()
+        if self.setting_repository is not None:
+            try:
+                self.setting_repository.set("deepseek_model", self.model)
+            except Exception:
+                pass
+
+    def get_model(self) -> str:
+        return self.model
 
     def decompose_task(self, description: str, due_time: datetime) -> list[dict]:
         if not isinstance(description, str) or not description.strip():
@@ -213,15 +241,27 @@ class AIAssistantManager:
             raise ValueError("AI 未能识别出任务标题")
         title = title.strip()
 
+        # ⚠️ Bug fix: when the input contains no deadline at all, the LLM is
+        # explicitly instructed to return ``due_time: null``. Treat that as the
+        # canonical "no deadline known" answer and propagate ``None`` upward —
+        # do NOT fabricate a default (e.g. today 23:59), because callers like
+        # ``SyncManager._ai_resolve_missing_due`` rely on ``None`` to drop the
+        # item instead of writing a placeholder task.
         due_raw = data.get("due_time")
-        if not isinstance(due_raw, str) or not due_raw.strip():
+        due_time: datetime | None
+        if due_raw is None or (isinstance(due_raw, str) and not due_raw.strip()):
+            due_time = None
+        elif isinstance(due_raw, datetime):
+            due_time = due_raw.replace(tzinfo=None) if due_raw.tzinfo is not None else due_raw
+        elif isinstance(due_raw, str):
+            try:
+                due_time = datetime.fromisoformat(due_raw.strip().replace("Z", ""))
+            except ValueError:
+                raise ValueError("AI 未能识别出截止时间")
+            if due_time.tzinfo is not None:
+                due_time = due_time.replace(tzinfo=None)
+        else:
             raise ValueError("AI 未能识别出截止时间")
-        try:
-            due_time = datetime.fromisoformat(due_raw.strip().replace("Z", ""))
-        except ValueError:
-            raise ValueError("AI 未能识别出截止时间")
-        if due_time.tzinfo is not None:
-            due_time = due_time.replace(tzinfo=None)
 
         description = data.get("description")
         if not isinstance(description, str):
@@ -751,11 +791,9 @@ class AIAssistantManager:
         schedule_lines = ""
         if self.schedule_manager is not None:
             try:
-                from app.config import SEMESTER_START
                 today = date.today()
                 today_weekday = today.isoweekday()
-                days_since_start = (today - SEMESTER_START).days
-                current_week = max(1, days_since_start // 7 + 1)
+                current_week = compute_current_week(self.setting_repository)
                 slots = self.schedule_manager.list_slots(current_week, today_weekday)
                 if slots:
                     schedule_lines = "\n".join(
@@ -866,7 +904,7 @@ class AIAssistantManager:
 
     def test_api_key(self, key: str) -> bool:
         try:
-            client = self.llm_client_factory(key)
+            client = self.llm_client_factory(key, model=self.model)
             client.chat([{"role": "user", "content": "ping"}], max_tokens=8)
             return True
         except Exception:
@@ -895,7 +933,7 @@ class AIAssistantManager:
             return fallback
         try:
             self._check_quota_or_raise(messages)
-            client = self.llm_client_factory(key)
+            client = self.llm_client_factory(key, model=self.model)
             reply, tokens = client.chat(messages)
             self._add_tokens(tokens)
             return reply.strip() or fallback
@@ -977,9 +1015,7 @@ class AIAssistantManager:
         if self.schedule_manager is not None:
             try:
                 today_weekday = date.today().isoweekday()
-                from app.config import SEMESTER_START
-                days_since_start = (date.today() - SEMESTER_START).days
-                current_week = max(1, days_since_start // 7 + 1)
+                current_week = compute_current_week(self.setting_repository)
                 slots = self.schedule_manager.list_slots(current_week, today_weekday)
                 if slots:
                     lines.append(f"\n【今日课表（第 {current_week} 周，周{today_weekday}）】")
@@ -1017,6 +1053,18 @@ class AIAssistantManager:
     def _build_schedule_context(self) -> list[str]:
         today = date.today()
         current_week = self._current_semester_week(today)
+        # The full-schedule iteration below historically capped at week 16;
+        # honour the user-configured ``semester_total_weeks`` (clamped to
+        # [1, 40]) so late-semester slots aren't silently dropped from the
+        # AI context. See REVIEW.md severe #2.
+        upper = 30
+        if self.setting_repository is not None:
+            try:
+                stored_total = self.setting_repository.get("semester_total_weeks", None)
+                if stored_total is not None:
+                    upper = max(1, min(40, int(stored_total)))
+            except Exception:
+                pass
         weekday_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
         lines: list[str] = [f"\n【当前周完整课表（第 {current_week} 周）】"]
 
@@ -1033,7 +1081,7 @@ class AIAssistantManager:
             lines.append("本周暂无课程。")
 
         all_slots_by_key = {}
-        for week in range(1, 17):
+        for week in range(1, upper + 1):
             for slot in self.schedule_manager.list_slots(week):
                 key = (
                     getattr(slot, "id", None),
@@ -1067,12 +1115,22 @@ class AIAssistantManager:
             lines.append(f"- 其余 {len(all_slots) - 80} 个时段已省略。")
         return lines
 
-    @staticmethod
-    def _current_semester_week(today: date) -> int:
-        days_since_start = (today - SEMESTER_START).days
-        if days_since_start < 0:
-            return 1
-        return max(1, min(16, days_since_start // 7 + 1))
+    def _current_semester_week(self, today: date | None = None) -> int:
+        """Compute the current semester week, honouring user-configured
+        ``semester_total_weeks`` (default 30, clamped to [1, 40]).
+
+        Historically this clamped to ``[1, 16]``, which meant any user whose
+        schedule extended past week 16 would see the AI context permanently
+        pinned to week 16 in late semester — every recommendation thereafter
+        was off by N weeks. See REVIEW.md severe #2.
+        """
+        # ``today`` is accepted for backwards compatibility with old callers
+        # that pre-computed it; the helper itself uses ``date.today()`` and
+        # the resulting week is identical when ``today`` matches the system
+        # clock. We delegate to ``compute_current_week`` so the upper bound
+        # tracks ``semester_total_weeks`` consistently with the rest of the
+        # codebase.
+        return compute_current_week(self.setting_repository)
 
     @staticmethod
     def _format_schedule_slot(slot) -> str:

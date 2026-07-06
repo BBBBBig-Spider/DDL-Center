@@ -40,7 +40,21 @@ class ScheduleManager:
 
     def add_slot(self, data: dict) -> int:
         slot = self._dict_to_slot(data)
+        # Upsert by external_id: when an import re-runs, existing rows must be
+        # updated in place rather than duplicated. find_by_external_id only
+        # matches source='sync' rows, so any slot carrying an external_id is
+        # treated as sync-origin (manual entry never sets external_id).
+        if slot.external_id:
+            existing = self.schedule_repository.find_by_external_id(slot.external_id)
+            if existing is not None:
+                slot.id = existing.id
+                self.schedule_repository.update(slot)
+                return existing.id
         return self.schedule_repository.add(slot)
+
+    def delete_all(self) -> int:
+        """Delete every schedule slot. Returns the number of rows removed."""
+        return self.schedule_repository.delete_all()
 
     def update_slot(self, slot_id: int, data: dict) -> None:
         if not isinstance(slot_id, int) or isinstance(slot_id, bool):
@@ -65,6 +79,15 @@ class ScheduleManager:
     def _dict_to_slot(self, data: dict) -> ScheduleSlot:
         from datetime import time as _time
         coerced = self._coerce_slot_fields(data)
+        external_id = coerced.get("external_id")
+        # Slots that come from an import / sync carry an external_id; slots
+        # the user adds by hand never do. Tag the source accordingly so
+        # find_by_external_id (which restricts to source='sync') can match.
+        explicit_source = coerced.get("source")
+        if explicit_source in ("manual", "sync"):
+            source = explicit_source
+        else:
+            source = "sync" if external_id else "manual"
         return ScheduleSlot(
             title=coerced.get("title", ""),
             weekday=coerced.get("weekday", 1),
@@ -76,8 +99,8 @@ class ScheduleManager:
             end_week=coerced.get("end_week", 16),
             week_type=coerced.get("week_type", "all"),
             course_id=coerced.get("course_id"),
-            source="manual",
-            external_id=coerced.get("external_id"),
+            source=source,
+            external_id=external_id,
         )
 
     @staticmethod

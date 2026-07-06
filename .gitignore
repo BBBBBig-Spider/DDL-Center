@@ -23,6 +23,12 @@ Thumbs.db
 *.db
 *.sqlite3
 
+# Local user state (must NOT be shared across machines)
+# - .theme_palette: standalone theme-name file (read before facade exists)
+# - last_*.json:    sync-time scrape caches, may contain a user's tasks/student-id
+data/.theme_palette
+data/last_*.json
+
 # Logs
 *.log
 

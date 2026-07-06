@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.gui.theme import BORDER, INK, PKU_GOLD, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
+from app.gui.theme import BORDER, INK, ACCENT, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, secondary_button_style
 from app.gui._helpers import get_field
 
 
@@ -40,7 +40,7 @@ class AlertItemWidget(QFrame):
                 border-radius: 6px;
             }}
             QFrame#alertItem:hover {{
-                border-color: {PKU_RED_DARK};
+                border-color: {PRIMARY_DARK};
             }}
             QFrame#alertItem QLabel {{
                 background-color: transparent;
@@ -65,9 +65,9 @@ class AlertItemWidget(QFrame):
 
     def _level_style(self) -> tuple[str, str, str]:
         if self.level in {"overdue", "urgent"}:
-            return PKU_RED, PKU_RED_LIGHT, "!"
+            return PRIMARY, PRIMARY_LIGHT, "!"
         if self.level == "warning" or self.kind == "overload":
-            return PKU_GOLD, "#FFF7E0", "!"
+            return ACCENT, "#FFF7E0", "!"
         return "#6B7D3A", "#F1F3E8", "i"
 
 

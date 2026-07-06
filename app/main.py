@@ -130,7 +130,25 @@ def main() -> None:
     if not icon.isNull():
         app.setWindowIcon(icon)
 
-    window = MainWindow(build_facade())
+    facade = build_facade()
+
+    # Apply persisted font scale before opening any windows so the layout
+    # picks the new metrics on first paint.
+    try:
+        repo = getattr(facade, "setting_repository", None)
+        if repo is not None:
+            from PySide6.QtGui import QFont
+
+            scale = float(repo.get("font_scale", 1.0))
+            scale = max(0.85, min(1.30, scale))
+            font = QFont(app.font())
+            font.setPointSizeF(10.0 * scale)
+            app.setFont(font)
+    except Exception:
+        # Font scaling is purely cosmetic — never block startup on it.
+        pass
+
+    window = MainWindow(facade)
     if not icon.isNull():
         window.setWindowIcon(icon)
     window.show()

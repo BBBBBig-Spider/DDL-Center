@@ -119,6 +119,27 @@ class AppFacade:
     def delete_schedule_slot(self, slot_id: int) -> None:
         self._require("schedule_manager").delete_slot(slot_id)
 
+    def clear_all_schedule_and_exams(self) -> dict:
+        """Used by the 'overwrite' import mode.
+
+        Deletes all schedule slots and exams, regardless of source (manual
+        or sync). Does NOT touch courses, tasks, or anything else — tasks
+        carry a course_id FK so dropping courses would orphan/break the
+        user's task list. Returns a small summary the UI can display.
+        """
+        summary = {"slots_deleted": 0, "exams_deleted": 0}
+        if self.schedule_manager is not None:
+            try:
+                summary["slots_deleted"] = self.schedule_manager.delete_all()
+            except Exception as exc:
+                print(f"[CLEAR] schedule delete failed: {exc}")
+        if self.exam_manager is not None:
+            try:
+                summary["exams_deleted"] = self.exam_manager.delete_all()
+            except Exception as exc:
+                print(f"[CLEAR] exam delete failed: {exc}")
+        return summary
+
     # ─── 提醒 ─────────────────────────────────────────────────
 
     def generate_alerts(self) -> list[Alert]:
@@ -159,28 +180,66 @@ class AppFacade:
     def get_auth_client(self):
         return self._require("sync_manager").auth_client
 
-    def logout_and_clear_sync_data(self) -> dict:
+    def logout_and_reset_local_state(self) -> dict:
+        """Wipe ALL local user data so the next launch is a clean slate.
+
+        Removes:
+          - data/ddl_center.db        (tasks, courses, schedules, exams,
+                                       alerts, settings — including avatar,
+                                       display_name, theme choice, font scale,
+                                       now-line color, deepseek_model)
+          - data/.theme_palette       (active theme name)
+          - .env (PKU_USERNAME / PKU_PASSWORD entries)
+
+        Preserves:
+          - The Deepseek API key in the OS keyring (independent of login)
+          - Sync probe caches (data/last_*.json) — already gitignored
+
+        The caller MUST restart the app after this returns: in-memory
+        repositories still hold a reference to the now-deleted DB file.
+        Returns a small dict for the UI to display in the confirmation toast.
+        """
+        from pathlib import Path
         from app.services import credentials_store
 
-        sync_manager = self._require("sync_manager")
-        tasks_deleted = 0
-        exams_deleted = 0
-        reviews_deleted = 0
-        task_repo = getattr(sync_manager, "task_repository", None)
-        exam_repo = getattr(sync_manager, "exam_repository", None)
-        sync_repo = getattr(sync_manager, "sync_repository", None)
-        if task_repo is not None and hasattr(task_repo, "delete_all_synced"):
-            tasks_deleted = task_repo.delete_all_synced()
-        if exam_repo is not None and hasattr(exam_repo, "delete_all_synced"):
-            exams_deleted = exam_repo.delete_all_synced()
-        if sync_repo is not None and hasattr(sync_repo, "clear_ai_reviews"):
-            reviews_deleted = sync_repo.clear_ai_reviews()
-        credentials_store.clear()
-        return {
-            "tasks_deleted": tasks_deleted,
-            "exams_deleted": exams_deleted,
-            "reviews_deleted": reviews_deleted,
+        summary = {
+            "db_deleted": False,
+            "theme_palette_deleted": False,
+            "credentials_cleared": False,
         }
+
+        # Best-effort: close any open DB connection so Windows lets us delete
+        # the file. SQLite on Windows holds a file lock until close().
+        db_manager = getattr(self, "db_manager", None)
+        if db_manager is not None and hasattr(db_manager, "close"):
+            try:
+                db_manager.close()
+            except Exception as exc:
+                print(f"[LOGOUT] failed to close db_manager: {exc}")
+
+        db_path = Path("data") / "ddl_center.db"
+        try:
+            if db_path.exists():
+                db_path.unlink()
+                summary["db_deleted"] = True
+        except Exception as exc:
+            print(f"[LOGOUT] failed to delete {db_path}: {exc}")
+
+        palette_path = Path("data") / ".theme_palette"
+        try:
+            if palette_path.exists():
+                palette_path.unlink()
+                summary["theme_palette_deleted"] = True
+        except Exception as exc:
+            print(f"[LOGOUT] failed to delete {palette_path}: {exc}")
+
+        try:
+            credentials_store.clear()
+            summary["credentials_cleared"] = True
+        except Exception as exc:
+            print(f"[LOGOUT] failed to clear credentials: {exc}")
+
+        return summary
 
     def get_statistics(self):
         return self._require("statistics_manager").get_statistics()
@@ -247,6 +306,12 @@ class AppFacade:
 
     def get_deepseek_api_key(self) -> str | None:
         return self._require("ai_assistant_manager").get_api_key()
+
+    def set_deepseek_model(self, model: str) -> None:
+        self._require("ai_assistant_manager").set_model(model)
+
+    def get_deepseek_model(self) -> str:
+        return self._require("ai_assistant_manager").get_model()
 
     def test_deepseek_api_key(self, key: str) -> bool:
         return self._require("ai_assistant_manager").test_api_key(key)

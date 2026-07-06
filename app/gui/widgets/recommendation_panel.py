@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.gui.theme import BORDER, INK, MUTED, PKU_RED, PKU_RED_DARK, PKU_RED_LIGHT, TEXT, secondary_button_style
+from app.gui.theme import BORDER, INK, MUTED, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, secondary_button_style
 from app.gui._helpers import duration_hours, format_time_field, get_field
 
 
@@ -53,8 +53,8 @@ class RecommendationItemWidget(QFrame):
                 border-radius: 6px;
             }}
             QFrame#recommendationItem:hover {{
-                border-color: {PKU_RED};
-                background-color: {PKU_RED_LIGHT};
+                border-color: {PRIMARY};
+                background-color: {PRIMARY_LIGHT};
             }}
             QFrame#recommendationItem QLabel {{
                 background-color: transparent;
@@ -100,16 +100,16 @@ class RecommendationItemWidget(QFrame):
             f"""
             QPushButton {{
                 background-color: #FFFFFF;
-                color: {PKU_RED};
-                border: 1px solid {PKU_RED};
+                color: {PRIMARY};
+                border: 1px solid {PRIMARY};
                 border-radius: 4px;
                 padding: 5px 8px;
                 font-size: 12px;
                 font-weight: 700;
             }}
             QPushButton:hover {{
-                background-color: {PKU_RED_LIGHT};
-                border-color: {PKU_RED_DARK};
+                background-color: {PRIMARY_LIGHT};
+                border-color: {PRIMARY_DARK};
             }}
             """
         )
@@ -130,7 +130,7 @@ class CurrentArrangementWidget(QFrame):
         self.setStyleSheet(
             f"""
             QFrame#currentArrangement {{
-                background-color: {PKU_RED_LIGHT};
+                background-color: {PRIMARY_LIGHT};
                 border: 1px solid #E7B8B8;
                 border-radius: 6px;
             }}
@@ -150,7 +150,7 @@ class CurrentArrangementWidget(QFrame):
 
         label = QLabel(f"已安排：{weekday_map.get(weekday, '周一')} {start_time}-{end_time}")
         label.setWordWrap(True)
-        label.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {PKU_RED};")
+        label.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {PRIMARY};")
         layout.addWidget(label, stretch=1)
 
         cancel_button = QPushButton("取消")
@@ -233,7 +233,7 @@ class RecommendationPanel(QWidget):
     def _badge_style(self, active: bool) -> str:
         if active:
             return (
-                f"background-color: {PKU_RED_LIGHT}; color: {PKU_RED}; border-radius: 4px; "
+                f"background-color: {PRIMARY_LIGHT}; color: {PRIMARY}; border-radius: 4px; "
                 "padding: 7px 10px; font-size: 12px; font-weight: 700; border: 1px solid #E7B8B8;"
             )
         return (
